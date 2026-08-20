@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Brisk-inspired SaaS shell — light canvas, navy accents, blue CTAs */
+@layer base {
+  :root {
+    --canvas: 210 20% 98%;
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --brisk-navy: 222 47% 11%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 214 95% 93%;
+    --accent-foreground: 221 83% 40%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 217 91% 60%;
+    --radius: 0.75rem;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --sidebar-active: 214 95% 93%;
+  }
+
+  .dark {
+    --canvas: 224 71% 4%;
+    --background: 224 71% 4%;
+    --foreground: 210 20% 98%;
+    --card: 224 71% 7%;
+    --card-foreground: 210 20% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --brisk-navy: 210 20% 98%;
+    --secondary: 215 28% 17%;
+    --secondary-foreground: 210 20% 98%;
+    --muted: 215 28% 17%;
+    --muted-foreground: 217 10% 64%;
+    --accent: 215 28% 17%;
+    --accent-foreground: 210 20% 98%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 215 28% 17%;
+    --input: 215 28% 17%;
+    --ring: 217 91% 60%;
+    --popover: 224 71% 7%;
+    --popover-foreground: 210 20% 98%;
+    --sidebar-active: 215 28% 22%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-[hsl(var(--canvas))] text-foreground antialiased;
+  }
+}

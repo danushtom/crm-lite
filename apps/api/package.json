@@ -1,0 +1,7 @@
+{
+  "name": "api",
+  "private": true,
+  "scripts": {
+    "dev": ".venv\\Scripts\\uvicorn app.main:app --reload --port 8000"
+  }
+}
