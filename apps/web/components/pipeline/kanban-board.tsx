@@ -3,7 +3,8 @@
 import { DndContext, DragEndEvent, DragOverlay, PointerSensor, closestCorners, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import { Badge, Card, CardContent, cn } from "@dracara/ui";
 import type { LeadRow, OpportunityRow } from "@dracara/types";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/use-api-mutation";
 import { format, parseISO } from "date-fns";
 import { BarChart3 } from "lucide-react";
 import Link from "next/link";
@@ -164,8 +165,8 @@ export function KanbanBoard() {
     queryFn: () => apiListAll<OpportunityWithLead>("/opportunities"),
   });
 
-  const move = useMutation({
-    mutationFn: async ({ leadId, stage }: { leadId: string; stage: string }) => {
+  const move = useApiMutation({
+    errorTitle: "Could not move card",    mutationFn: async ({ leadId, stage }: { leadId: string; stage: string }) => {
       await apiFetch(`/leads/${leadId}/stage`, {
         method: "PATCH",
         body: JSON.stringify({ stage }),

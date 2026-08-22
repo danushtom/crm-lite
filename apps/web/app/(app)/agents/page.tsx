@@ -1,7 +1,8 @@
 "use client";
 
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from "@dracara/ui";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/use-api-mutation";
 import { useState } from "react";
 import { apiFetch, apiList } from "@/lib/api";
 
@@ -14,8 +15,8 @@ export default function AgentsPage() {
   });
 
   const [email, setEmail] = useState("");
-  const invite = useMutation({
-    mutationFn: () => apiFetch("/agents/invite", { method: "POST", body: JSON.stringify({ email }) }),
+  const invite = useApiMutation({
+    errorTitle: "Could not send invitation",    mutationFn: () => apiFetch("/agents/invite", { method: "POST", body: JSON.stringify({ email }) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["agents"] });
       setEmail("");

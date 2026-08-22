@@ -1,7 +1,8 @@
 "use client";
 
 import { Button, Card, CardContent } from "@dracara/ui";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/use-api-mutation";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { apiFetch, apiList } from "@/lib/api";
@@ -18,8 +19,8 @@ export default function TimelinePage() {
   const [description, setDescription] = useState("");
   const [type, setType] = useState("note");
 
-  const create = useMutation({
-    mutationFn: () =>
+  const create = useApiMutation({
+    errorTitle: "Could not log activity",    mutationFn: () =>
       apiFetch(`/leads/${id}/activities`, {
         method: "POST",
         body: JSON.stringify({ type, description }),

@@ -2,7 +2,8 @@
 
 import { Badge, Button, Card, CardContent } from "@dracara/ui";
 import { scoreTier, type CompanyRow, type ContactRow, type OpportunitySummaryRow } from "@dracara/types";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/use-api-mutation";
 import Link from "next/link";
 import { apiFetch, apiFetchOptional } from "@/lib/api";
 import { ArrowRight, ChevronRight, Layers, Mail, MapPin, Sparkles, UserCircle } from "lucide-react";
@@ -63,8 +64,8 @@ export function LeadHero({ id }: { id: string }) {
 
   const opportunityId = opportunity ? String(opportunity.id) : null;
 
-  const convert = useMutation({
-    mutationFn: () => apiFetch(`/leads/${id}/convert`, { method: "POST", body: "{}" }),
+  const convert = useApiMutation({
+    errorTitle: "Could not convert lead",    mutationFn: () => apiFetch(`/leads/${id}/convert`, { method: "POST", body: "{}" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["lead", id] });
       qc.invalidateQueries({ queryKey: ["opportunity-by-lead", id] });

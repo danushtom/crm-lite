@@ -1,7 +1,8 @@
 "use client";
 
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@dracara/ui";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/use-api-mutation";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -30,8 +31,8 @@ export default function IntelligencePage() {
 
   const [form, setForm] = useState<Record<string, string>>({});
 
-  const save = useMutation({
-    mutationFn: () => apiFetch(`/leads/${id}/intelligence`, { method: "PATCH", body: JSON.stringify(form) }),
+  const save = useApiMutation({
+    errorTitle: "Could not save intelligence",    mutationFn: () => apiFetch(`/leads/${id}/intelligence`, { method: "PATCH", body: JSON.stringify(form) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["lead", id] }),
   });
 

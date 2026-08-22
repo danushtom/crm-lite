@@ -1,7 +1,8 @@
 "use client";
 
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, cn } from "@dracara/ui";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/use-api-mutation";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { apiFetch, apiList } from "@/lib/api";
@@ -53,13 +54,15 @@ export default function RemindersPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [showAdd, setShowAdd] = useState(false);
 
-  const createMeeting = useMutation({
-    mutationFn: () =>
+  const createMeeting = useApiMutation({
+    errorTitle: "Could not schedule meeting",    mutationFn: () =>
       apiFetch(`/leads/${id}/meetings`, {
         method: "POST",
+        // scheduled_at is required by the API; the submit button guards against an empty
+        // value, so there is no null branch to take.
         body: JSON.stringify({
-          title,
-          scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+          title: title.trim(),
+          scheduled_at: new Date(scheduledAt).toISOString(),
           duration_minutes: 30,
         }),
       }),
@@ -98,7 +101,7 @@ export default function RemindersPage() {
               <label className="text-xs text-muted-foreground font-medium">Date & Time</label>
               <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
             </div>
-            <Button disabled={!scheduledAt || createMeeting.isPending} onClick={() => createMeeting.mutate()}>
+            <Button disabled={!scheduledAt || !title.trim() || createMeeting.isPending} onClick={() => createMeeting.mutate()}>
               Schedule
             </Button>
           </CardContent>

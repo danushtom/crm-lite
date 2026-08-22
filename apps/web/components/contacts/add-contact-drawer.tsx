@@ -11,7 +11,8 @@ import {
   SheetTitle, 
   SheetTrigger 
 } from "@dracara/ui";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/use-api-mutation";
 import { useState } from "react";
 import { apiFetch, apiListAll } from "@/lib/api";
 import { compactPayload } from "@/lib/forms";
@@ -36,8 +37,8 @@ export function AddContactDrawer() {
     queryFn: () => apiListAll<any>("/companies"),
   });
 
-  const createContact = useMutation({
-    mutationFn: () =>
+  const createContact = useApiMutation({
+    errorTitle: "Could not create contact",    mutationFn: () =>
       // Optional enum/email fields must be omitted rather than sent as "" — the API
       // validates strictly and would reject an empty string with a 422.
       apiFetch("/contacts", {

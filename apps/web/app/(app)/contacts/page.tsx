@@ -13,7 +13,8 @@ import {
   DropdownMenuSeparator,
   Input
 } from "@dracara/ui";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/use-api-mutation";
 import {
   ChevronDown,
   ChevronLeft,
@@ -175,8 +176,8 @@ export default function ContactsPage() {
       });
   }, [rows, leads, selectedStage, searchQuery, sortField, sortOrder]);
 
-  const { mutate: updateContact } = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<ContactRow> }) => {
+  const { mutate: updateContact } = useApiMutation({
+    errorTitle: "Could not update contact",    mutationFn: async ({ id, data }: { id: string; data: Partial<ContactRow> }) => {
       return apiFetch(`/contacts/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
@@ -187,8 +188,8 @@ export default function ContactsPage() {
     },
   });
 
-  const { mutate: deleteContact } = useMutation({
-    mutationFn: async (id: string) => {
+  const { mutate: deleteContact } = useApiMutation({
+    errorTitle: "Could not update contact",    mutationFn: async (id: string) => {
       return apiFetch(`/contacts/${id}`, { method: "DELETE" });
     },
     onSuccess: () => {

@@ -2,7 +2,8 @@
 
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from "@dracara/ui";
 import { scoreTier, type CompanyRow, type ContactRow, type LeadRow, type LeadIntelligenceRow, type ActivityRow, type OpportunitySummaryRow } from "@dracara/types";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/lib/use-api-mutation";
 import { format, parseISO } from "date-fns";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -107,14 +108,14 @@ export default function LeadOverviewPage() {
   const opportunityId = opportunity ? String(opportunity.id) : null;
   const oppRows = opportunity ? [opportunity] : [];
 
-  const update = useMutation({
-    mutationFn: (patch: Record<string, unknown>) =>
+  const update = useApiMutation({
+    errorTitle: "Could not update lead",    mutationFn: (patch: Record<string, unknown>) =>
       apiFetch(`/leads/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["lead", id] }),
   });
 
-  const convert = useMutation({
-    mutationFn: () => apiFetch(`/leads/${id}/convert`, { method: "POST", body: "{}" }),
+  const convert = useApiMutation({
+    errorTitle: "Could not update lead",    mutationFn: () => apiFetch(`/leads/${id}/convert`, { method: "POST", body: "{}" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["lead", id] });
       qc.invalidateQueries({ queryKey: ["opportunity-by-lead", id] });

@@ -16,7 +16,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Target } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ApiError, apiFetch, apiListAll } from "@/lib/api";
+import { apiFetch, apiListAll } from "@/lib/api";
+import { describeError } from "@/lib/use-api-mutation";
 import {
   CURRENCY_OPTIONS,
   LEAD_SOURCE_OPTIONS,
@@ -98,15 +99,8 @@ export function AddLeadDrawer() {
       setForm(EMPTY_FORM);
       setOpen(false);
     },
-    onError: (error: Error) => {
-      if (error instanceof ApiError && error.fieldErrors?.length) {
-        toast.error("Could not create lead", {
-          description: error.fieldErrors.map((f) => `${f.field}: ${f.message}`).join("; "),
-        });
-        return;
-      }
-      toast.error("Could not create lead", { description: error.message });
-    },
+    onError: (error: Error) =>
+      toast.error("Could not create lead", { description: describeError(error) }),
   });
 
   const probability = Number(form.deal_probability);
