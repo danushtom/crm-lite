@@ -25,3 +25,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 *.log
+
+# Supabase CLI scratch state (project ref, versions, pooler url)
+supabase/.temp/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
