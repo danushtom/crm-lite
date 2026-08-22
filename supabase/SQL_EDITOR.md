@@ -20,7 +20,9 @@ Apply files in chronological order from [`migrations/`](./migrations/) (e.g. via
 
 ## Brisk-style UI vs pipeline stages
 
-Reference dashboards may show **four** Kanban columns (e.g. LEADS / DISCOVERY / DEMO / WON). This product stores pipeline position on **`leads.stage`** using the granular **`lead_stage`** enum (see `tdd.md` / `packages/types`). Matching Brisk is a **frontend grouping/mapping** concern, not separate database enums for those four labels.
+The Kanban UI shows **five** grouped columns (LEADS / DISCOVERY / DEMO / WON / LOST). Since `20260429140000_opportunities_pipeline.sql`, pipeline position is stored on **`opportunities.stage`** (one opportunity row per lead) using the granular **`lead_stage`** enum; **`leads.stage`** is now a mirror kept in sync by the `opportunities_sync_lead` trigger and is read by the scoring APIs. Write stage changes to `opportunities`, not `leads`.
+
+The five column labels are a **frontend grouping/mapping** concern (`apps/web/lib/opportunities-kanban-columns.ts`), not separate database enums.
 
 ## New UI columns
 
