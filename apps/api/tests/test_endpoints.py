@@ -77,13 +77,14 @@ def test_stage_filter_is_passed_through(authed_client, fake_db):
 
 
 def test_search_strips_postgrest_wildcards(authed_client, fake_db):
-    """Unescaped * or , would let a caller alter the filter expression."""
-    fake_db.responses["GET companies"] = FakeResult([], count=0)
+    """Unescaped *, % or , would let a caller alter the filter expression."""
     fake_db.responses["GET leads"] = FakeResult([], count=0)
+
     authed_client.get(f"{V1}/leads", params={"search": "ac*me,(x)"})
-    or_clause = fake_db.calls[-1][2]["params"]["or"]
-    assert "*acme" in or_clause or "acmex" in or_clause
-    assert "ac*me" not in or_clause
+
+    name_filter = fake_db.calls[-1][2]["params"]["companies.name"]
+    # Only the wrapping wildcards this endpoint adds should survive.
+    assert name_filter == "ilike.*acmex*"
 
 
 # --- Creation semantics -------------------------------------------------------
@@ -281,3 +282,39 @@ def test_dashboard_unwraps_the_rpc_envelope(authed_client, fake_db):
     assert body["pipeline_total"] == 1000
     assert body["win_loss_ratio_30d"]["wins"] == 2
     assert body["hot_leads_needing_action"] == ["lead-1"]
+
+
+def test_dashboard_reports_currency_composition(authed_client, fake_db):
+    """pipeline_total sums estimated_value across currencies, so callers need to know."""
+    fake_db.responses["RPC dashboard_metrics"] = FakeResult(
+        [{"dashboard_metrics": {
+            "pipeline_total": 1500,
+            "weighted_forecast": 700,
+            "pipeline_by_currency": {"INR": 1000, "USD": 500},
+            "mixed_currency": True,
+            "stage_values": {},
+            "hot_leads_needing_action": [],
+            "win_loss_ratio_30d": {"wins": 0, "losses": 0},
+        }}]
+    )
+
+    body = authed_client.get(f"{V1}/dashboard").json()
+
+    assert body["mixed_currency"] is True
+    assert body["pipeline_by_currency"] == {"INR": 1000, "USD": 500}
+
+
+def test_lead_search_is_a_single_joined_query(authed_client, fake_db):
+    """It used to resolve company ids in a separate call capped at 100, silently dropping
+    the leads of every company past that cap."""
+    fake_db.responses["GET leads"] = FakeResult([], count=0)
+
+    authed_client.get(f"{V1}/leads", params={"search": "acme"})
+
+    queries = [c for c in fake_db.calls if c[1] in ("leads", "companies")]
+    assert len(queries) == 1, f"search should not need a second lookup: {queries}"
+
+    params = queries[0][2]["params"]
+    assert params["select"] == "*,companies!inner(*)"
+    assert params["companies.name"] == "ilike.*acme*"
+    assert "limit" not in str(params.get("companies.name", ""))

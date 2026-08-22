@@ -33,7 +33,7 @@ async def list_agents(db: DbDep, page: PageParamsDep, _admin: AdminDep) -> Page[
         "users",
         params={
             "select": "*",
-            "order": "created_at.desc",
+            "order": "created_at.desc,id.desc",
             "limit": str(page.limit),
             "offset": str(page.offset),
         },

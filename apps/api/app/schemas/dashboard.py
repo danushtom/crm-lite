@@ -23,6 +23,18 @@ class DashboardMetrics(APIModel):
     stage_values: dict[str, Money] = Field(
         default_factory=dict, description="Estimated value bucketed by pipeline stage."
     )
+    pipeline_by_currency: dict[str, Money] = Field(
+        default_factory=dict,
+        description="Pipeline value grouped by currency. Always correct, unlike the totals above.",
+    )
+    mixed_currency: bool = Field(
+        default=False,
+        description=(
+            "True when the visible pipeline spans more than one currency, in which case "
+            "pipeline_total and weighted_forecast add different units and are meaningless. "
+            "Read pipeline_by_currency instead."
+        ),
+    )
     followups_today_count: int = 0
     overdue_tasks_count: int = 0
     proposals_pending_response: int = 0

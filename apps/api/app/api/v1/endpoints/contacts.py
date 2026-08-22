@@ -32,7 +32,7 @@ async def list_contacts(
 ) -> Page[ContactWithCompany]:
     params: dict[str, str] = {
         "select": "*,companies(name)",
-        "order": "created_at.desc",
+        "order": "created_at.desc,id.desc",
         "limit": str(page.limit),
         "offset": str(page.offset),
     }

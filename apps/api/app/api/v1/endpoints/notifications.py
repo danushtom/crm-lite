@@ -29,7 +29,7 @@ async def list_notifications(
 ) -> Page[Notification]:
     params: dict[str, str] = {
         "select": "*",
-        "order": "created_at.desc",
+        "order": "created_at.desc,id.desc",
         "limit": str(page.limit),
         "offset": str(page.offset),
     }

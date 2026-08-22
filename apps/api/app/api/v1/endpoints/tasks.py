@@ -32,7 +32,7 @@ async def list_tasks(
 ) -> Page[Task]:
     params: dict[str, str] = {
         "select": "*",
-        "order": "due_date.asc",
+        "order": "due_date.asc,id.desc",
         "limit": str(page.limit),
         "offset": str(page.offset),
     }

@@ -52,12 +52,12 @@ async def list_leads(
     project_type: Annotated[ProjectType | None, Query()] = None,
     search: Annotated[
         str | None,
-        Query(max_length=200, description="Matches company name, project type or lead source."),
+        Query(max_length=200, description="Case-insensitive match on the company name."),
     ] = None,
 ) -> Page[LeadWithCompany]:
     params: dict[str, str] = {
         "select": "*,companies(*)",
-        "order": "updated_at.desc",
+        "order": "updated_at.desc,id.desc",
         "limit": str(page.limit),
         "offset": str(page.offset),
     }
@@ -73,14 +73,17 @@ async def list_leads(
     if search:
         pattern = _search_pattern(search)
         if pattern:
-            companies = await db.select(
-                "companies", params={"select": "id", "limit": "100", "name": f"ilike.{pattern}"}
-            )
-            company_ids = [str(c["id"]) for c in companies.rows]
-            clauses = [f"project_type.ilike.{pattern}", f"lead_source.ilike.{pattern}"]
-            if company_ids:
-                clauses.append(f"company_id.in.({','.join(company_ids)})")
-            params["or"] = "(" + ",".join(clauses) + ")"
+            # Filter on the embedded company with an inner join, so the match happens in one
+            # query against the trigram index on companies.name.
+            #
+            # This previously ran a separate lookup capped at 100 company ids and fed them
+            # into an `in.(...)` list: past 100 matching companies their leads silently
+            # vanished from the results, and the exact set depended on PostgREST's row order.
+            # It also matched `search` against project_type and lead_source, which are enums
+            # with a handful of values -- substring matching them is close to meaningless, and
+            # both already have dedicated exact filters on this endpoint.
+            params["select"] = "*,companies!inner(*)"
+            params["companies.name"] = f"ilike.{pattern}"
 
     result = await db.select("leads", params=params, count=True)
     return Page.build([LeadWithCompany.model_validate(r) for r in result.rows], page, result.count)
@@ -134,13 +137,13 @@ async def get_lead(
             params={
                 "select": "*",
                 "lead_id": f"eq.{lead_id}",
-                "order": "performed_at.desc",
+                "order": "performed_at.desc,id.desc",
                 "limit": "50",
             },
         )
         tasks = await db.select(
             "tasks",
-            params={"select": "*", "lead_id": f"eq.{lead_id}", "order": "due_date.asc", "limit": "25"},
+            params={"select": "*", "lead_id": f"eq.{lead_id}", "order": "due_date.asc,id.desc", "limit": "25"},
         )
         detail.activities = [Activity.model_validate(a) for a in activities.rows]
         detail.recent_tasks = tasks.rows
@@ -244,7 +247,7 @@ async def list_activities(lead_id: str, db: DbDep, page: PageParamsDep) -> Page[
         params={
             "select": "*",
             "lead_id": f"eq.{lead_id}",
-            "order": "performed_at.desc",
+            "order": "performed_at.desc,id.desc",
             "limit": str(page.limit),
             "offset": str(page.offset),
         },
@@ -289,7 +292,7 @@ async def list_lead_tasks(lead_id: str, db: DbDep, page: PageParamsDep) -> Page[
         params={
             "select": "*",
             "lead_id": f"eq.{lead_id}",
-            "order": "due_date.asc",
+            "order": "due_date.asc,id.desc",
             "limit": str(page.limit),
             "offset": str(page.offset),
         },
@@ -335,7 +338,7 @@ async def list_lead_meetings(lead_id: str, db: DbDep, page: PageParamsDep) -> Pa
         params={
             "select": "*",
             "lead_id": f"eq.{lead_id}",
-            "order": "scheduled_at.asc",
+            "order": "scheduled_at.asc,id.desc",
             "limit": str(page.limit),
             "offset": str(page.offset),
         },

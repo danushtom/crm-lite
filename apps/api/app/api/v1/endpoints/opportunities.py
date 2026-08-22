@@ -43,7 +43,7 @@ async def list_opportunities(
 ) -> Page[OpportunityWithLead]:
     params: dict[str, str] = {
         "select": "*,leads(*,companies(*))",
-        "order": "updated_at.desc",
+        "order": "updated_at.desc,id.desc",
         "limit": str(page.limit),
         "offset": str(page.offset),
     }
@@ -130,7 +130,7 @@ async def list_proposals(
         params={
             "select": "*",
             "opportunity_id": f"eq.{opportunity_id}",
-            "order": "version.desc",
+            "order": "version.desc,id.desc",
             "limit": str(page.limit),
             "offset": str(page.offset),
         },

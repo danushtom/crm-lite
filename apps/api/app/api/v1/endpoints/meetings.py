@@ -36,7 +36,7 @@ async def list_meetings(
 ) -> Page[Meeting]:
     params: dict[str, str] = {
         "select": "*",
-        "order": "scheduled_at.asc",
+        "order": "scheduled_at.asc,id.desc",
         "limit": str(page.limit),
         "offset": str(page.offset),
     }

@@ -70,7 +70,7 @@ async def get_follow_ups(db: DbDep, user: CurrentUserDep) -> FollowUpQueues:
             "owner_id": owner,
             "status": "eq.pending",
             "due_date": f"lt.{today_iso}",
-            "order": "due_date.asc",
+            "order": "due_date.asc,id.desc",
         },
     )
     due_today = await db.select(
@@ -79,7 +79,7 @@ async def get_follow_ups(db: DbDep, user: CurrentUserDep) -> FollowUpQueues:
             "select": "*",
             "owner_id": owner,
             "due_date": f"eq.{today_iso}",
-            "order": "due_date.asc",
+            "order": "due_date.asc,id.desc",
         },
     )
     upcoming = await db.select(
@@ -90,7 +90,7 @@ async def get_follow_ups(db: DbDep, user: CurrentUserDep) -> FollowUpQueues:
             "status": "eq.pending",
             "due_date": f"gt.{today_iso}",
             "and": f"(due_date.lte.{horizon})",
-            "order": "due_date.asc",
+            "order": "due_date.asc,id.desc",
         },
     )
 

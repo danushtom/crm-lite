@@ -145,3 +145,24 @@ def test_security_headers_are_present(client):
     headers = client.get("/health").headers
     assert headers["X-Content-Type-Options"] == "nosniff"
     assert headers["X-Frame-Options"] == "DENY"
+
+
+def test_every_list_orders_by_a_unique_tiebreaker():
+    """OFFSET pagination over a non-unique sort key is non-deterministic.
+
+    Rows sharing the sort value can be returned on two consecutive pages, or skipped
+    entirely. Any batch UPDATE gives many rows an identical updated_at, so this is not
+    hypothetical -- it is just invisible until the data makes it visible.
+    """
+    import pathlib
+    import re
+
+    endpoints = pathlib.Path("app/api/v1/endpoints")
+    offenders = []
+    for module in endpoints.glob("*.py"):
+        for match in re.finditer(r'"order":\s*"([^"]+)"', module.read_text(encoding="utf-8")):
+            clause = match.group(1)
+            if not clause.split(",")[-1].startswith("id."):
+                offenders.append(f"{module.name}: {clause}")
+
+    assert offenders == [], f"ordering without a unique tiebreaker: {offenders}"
