@@ -232,16 +232,17 @@ def test_unparseable_timestamp_is_skipped_not_fatal(fake_sb, no_real_notificatio
 # --- followup_reminder / overdue_escalation -----------------------------------
 
 
-def test_followup_reminder_dedupes_per_task_per_day(fake_sb, no_real_notifications):
+def test_followup_reminder_dedupes_per_task_and_due_instant(fake_sb, no_real_notifications):
+    """Keyed on due_at, so rescheduling a task can raise a fresh reminder but a re-run
+    inside the same window cannot."""
+    due = "2026-09-01T09:00:00+00:00"
     fake_sb.responses["GET /tasks"] = [
-        {"id": "t-1", "owner_id": "u-1", "title": "Call", "lead_id": "lead-1"}
+        {"id": "t-1", "owner_id": "u-1", "title": "Call", "lead_id": "lead-1", "due_at": due}
     ]
 
     worker_app.followup_reminder()
 
-    key = no_real_notifications[0]["dedupe_key"]
-    assert key.startswith("followup_reminder:t-1:")
-    assert date.today().isoformat() in key
+    assert no_real_notifications[0]["dedupe_key"] == f"followup_reminder:t-1:{due}"
 
 
 def test_overdue_escalation_is_bounded(fake_sb):
@@ -253,11 +254,23 @@ def test_overdue_escalation_is_bounded(fake_sb):
     params = fake_sb.params_for("GET", "/tasks")
     assert params["limit"] == "1000"
     assert params["status"] == "eq.pending"
+    assert params["due_at"].startswith("lt.")
+
+
+def test_followup_reminder_uses_an_absolute_window(fake_sb):
+    """due_date made "due today" depend on the worker host's calendar day, not the owner's."""
+    fake_sb.responses["GET /tasks"] = []
+
+    worker_app.followup_reminder()
+
+    params = fake_sb.params_for("GET", "/tasks")
+    assert params["due_at"].startswith("gte.")
+    assert "due_at.lt." in params["and"]
 
 
 def test_overdue_escalation_notifies_owner_and_admins(fake_sb, no_real_notifications):
     fake_sb.responses["GET /tasks"] = [
-        {"id": "t-5", "owner_id": "u-1", "title": "Late", "due_date": "2026-01-01"}
+        {"id": "t-5", "owner_id": "u-1", "title": "Late", "due_at": "2026-01-01T09:00:00+00:00"}
     ]
     fake_sb.responses["GET /users"] = [{"id": "admin-1"}, {"id": "admin-2"}]
 

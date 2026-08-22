@@ -128,11 +128,11 @@ export interface TaskRow {
   owner_id: string;
   title: string;
   notes: string | null;
-  due_date: string;
-  due_time: string | null;
+  /** Absolute instant the follow-up falls due; render in the owner's timezone. */
+  due_at: string;
   status: TaskStatus;
   outcome_note: string | null;
-  snoozed_until: string | null;
+  snoozed_to: string | null;
   completed_at: string | null;
   created_at: string;
 }

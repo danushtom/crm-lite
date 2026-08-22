@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 
 from app.api.deps import CurrentUserDep, DbDep
+from app.core.concurrency import IfMatchDep, set_etag, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.domain.enums import TaskStatus
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
@@ -32,7 +33,7 @@ async def list_tasks(
 ) -> Page[Task]:
     params: dict[str, str] = {
         "select": "*",
-        "order": "due_date.asc,id.desc",
+        "order": "due_at.asc,id.desc",
         "limit": str(page.limit),
         "offset": str(page.offset),
     }
@@ -53,9 +54,11 @@ async def list_tasks(
     summary="Get a task",
     responses=ERROR_RESPONSES,
 )
-async def get_task(task_id: str, db: DbDep) -> Task:
+async def get_task(task_id: str, db: DbDep, response: Response) -> Task:
     result = await db.select("tasks", params={"select": "*", "id": f"eq.{task_id}"})
-    return Task.model_validate(result.one("Task"))
+    row = result.one("Task")
+    set_etag(response, row)
+    return Task.model_validate(row)
 
 
 @router.patch(
@@ -68,10 +71,16 @@ async def get_task(task_id: str, db: DbDep) -> Task:
     ),
     responses=ERROR_RESPONSES,
 )
-async def update_task(task_id: str, body: TaskUpdate, db: DbDep) -> Task:
+async def update_task(
+    task_id: str,
+    body: TaskUpdate,
+    db: DbDep,
+    response: Response,
+    if_match: IfMatchDep,
+) -> Task:
     changes = TaskUpdate.model_validate(body.changes()).model_dump(exclude_unset=True, mode="json")
     if not changes:
-        return await get_task(task_id, db)
+        return await get_task(task_id, db, response)
 
     if "status" in changes:
         if changes["status"] == TaskStatus.COMPLETED:
@@ -80,5 +89,8 @@ async def update_task(task_id: str, body: TaskUpdate, db: DbDep) -> Task:
             # Reopening a task must not leave a stale completion timestamp behind.
             changes["completed_at"] = None
 
-    result = await db.update("tasks", {"id": f"eq.{task_id}"}, changes)
-    return Task.model_validate(result.one("Task"))
+    row = await update_guarded(
+        db, "tasks", record_id=task_id, changes=changes, if_match=if_match, what="Task"
+    )
+    set_etag(response, row)
+    return Task.model_validate(row)

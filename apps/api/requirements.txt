@@ -8,6 +8,9 @@ httpx>=0.28.1
 python-multipart>=0.0.20
 cryptography>=44.0.0
 slowapi>=0.1.9
+# IANA timezone database. Windows ships none, and slim container images often omit it,
+# so zoneinfo cannot resolve 'Asia/Kolkata' without this.
+tzdata>=2024.2
 
 # Testing
 pytest>=8.3.4

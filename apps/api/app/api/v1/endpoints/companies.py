@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentUserDep, DbDep
+from app.core.concurrency import IfMatchDep, set_etag, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
 from app.schemas.companies import Company, CompanyCreate, CompanyUpdate
@@ -70,9 +71,11 @@ async def create_company(
     summary="Get a company",
     responses=ERROR_RESPONSES,
 )
-async def get_company(company_id: str, db: DbDep) -> Company:
+async def get_company(company_id: str, db: DbDep, response: Response) -> Company:
     result = await db.select("companies", params={"select": "*", "id": f"eq.{company_id}"})
-    return Company.model_validate(result.one("Company"))
+    row = result.one("Company")
+    set_etag(response, row)
+    return Company.model_validate(row)
 
 
 @router.patch(
@@ -82,9 +85,23 @@ async def get_company(company_id: str, db: DbDep) -> Company:
     description="Partial update. Only the fields present in the request body are modified.",
     responses=ERROR_RESPONSES,
 )
-async def update_company(company_id: str, body: CompanyUpdate, db: DbDep) -> Company:
+async def update_company(
+    company_id: str,
+    body: CompanyUpdate,
+    db: DbDep,
+    response: Response,
+    if_match: IfMatchDep,
+) -> Company:
     changes = body.changes()
     if not changes:
-        return await get_company(company_id, db)
-    result = await db.update("companies", {"id": f"eq.{company_id}"}, changes)
-    return Company.model_validate(result.one("Company"))
+        return await get_company(company_id, db, response)
+    row = await update_guarded(
+        db,
+        "companies",
+        record_id=company_id,
+        changes=changes,
+        if_match=if_match,
+        what="Company",
+    )
+    set_etag(response, row)
+    return Company.model_validate(row)

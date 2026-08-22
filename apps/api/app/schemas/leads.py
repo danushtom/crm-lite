@@ -75,6 +75,10 @@ class Lead(APIModel):
     no_touch_alert: bool | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    version: int = Field(
+        default=1,
+        description="Monotonic row version. Returned as an ETag; send it back via If-Match.",
+    )
 
 
 class LeadWithCompany(Lead):
@@ -96,6 +100,10 @@ class LeadIntelligence(APIModel):
     comm_preference: CommPreference | None = None
     updated_at: datetime | None = None
     updated_by: str | None = None
+    version: int = Field(
+        default=1,
+        description="Monotonic row version. Returned as an ETag; send it back via If-Match.",
+    )
 
 
 class LeadIntelligenceUpdate(PatchModel):

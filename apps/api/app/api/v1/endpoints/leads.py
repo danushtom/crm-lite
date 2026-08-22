@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentUserDep, DbDep, NonPartnerDep
+from app.core.concurrency import IfMatchDep, set_etag
 from app.core.pagination import Page, PageParamsDep
 from app.domain.enums import LeadSource, LeadStage, ProjectType
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
@@ -120,11 +121,13 @@ async def create_lead(
 async def get_lead(
     lead_id: str,
     db: DbDep,
+    response: Response,
     include_related: Annotated[
         bool, Query(description="Embed recent activities and tasks.")
     ] = False,
 ) -> LeadDetail:
     lead = await lead_service.get_lead(db, lead_id)
+    set_etag(response, lead)
     intelligence = await lead_service.get_lead_intelligence(db, lead_id)
 
     detail = LeadDetail(
@@ -143,7 +146,7 @@ async def get_lead(
         )
         tasks = await db.select(
             "tasks",
-            params={"select": "*", "lead_id": f"eq.{lead_id}", "order": "due_date.asc,id.desc", "limit": "25"},
+            params={"select": "*", "lead_id": f"eq.{lead_id}", "order": "due_at.asc,id.desc", "limit": "25"},
         )
         detail.activities = [Activity.model_validate(a) for a in activities.rows]
         detail.recent_tasks = tasks.rows
@@ -160,9 +163,16 @@ async def get_lead(
     ),
     responses=ERROR_RESPONSES,
 )
-async def update_lead(lead_id: str, body: LeadUpdate, db: DbDep) -> Lead:
+async def update_lead(
+    lead_id: str,
+    body: LeadUpdate,
+    db: DbDep,
+    response: Response,
+    if_match: IfMatchDep,
+) -> Lead:
     changes = LeadUpdate.model_validate(body.changes()).model_dump(exclude_unset=True, mode="json")
-    updated = await lead_service.update_lead(db, lead_id, changes)
+    updated = await lead_service.update_lead(db, lead_id, changes, if_match=if_match)
+    set_etag(response, updated)
     return Lead.model_validate(updated)
 
 
@@ -292,7 +302,7 @@ async def list_lead_tasks(lead_id: str, db: DbDep, page: PageParamsDep) -> Page[
         params={
             "select": "*",
             "lead_id": f"eq.{lead_id}",
-            "order": "due_date.asc,id.desc",
+            "order": "due_at.asc,id.desc",
             "limit": str(page.limit),
             "offset": str(page.offset),
         },

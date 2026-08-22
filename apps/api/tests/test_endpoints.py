@@ -25,7 +25,7 @@ TASK = {
     "lead_id": "lead-1",
     "owner_id": "11111111-2222-3333-4444-555555555555",
     "title": "Call back",
-    "due_date": "2026-09-01",
+    "due_at": "2026-09-01T09:00:00+00:00",
     "status": "pending",
 }
 
@@ -174,7 +174,7 @@ def test_snoozing_requires_a_date(authed_client):
 def test_snoozing_with_a_date_is_accepted(authed_client, fake_db):
     fake_db.responses["PATCH tasks"] = FakeResult({**TASK, "status": "snoozed"})
     response = authed_client.patch(
-        f"{V1}/tasks/task-1", json={"status": "snoozed", "snoozed_until": "2026-09-05"}
+        f"{V1}/tasks/task-1", json={"status": "snoozed", "snoozed_to": "2026-09-05T09:00:00+00:00"}
     )
     assert response.status_code == 200
 
@@ -251,15 +251,50 @@ def test_marking_unread_clears_the_timestamp(authed_client, fake_db):
 def test_follow_up_queues_filter_in_the_database(authed_client, fake_db, test_user):
     """The previous implementation fetched every task and partitioned in Python."""
     fake_db.responses["GET tasks"] = FakeResult([TASK])
+    fake_db.responses["GET users"] = FakeResult([{"id": test_user.sub, "role": "agent",
+                                                  "timezone": "Asia/Kolkata"}])
 
     body = authed_client.get(f"{V1}/dashboard/follow-ups").json()
 
-    assert set(body) == {"today", "overdue", "upcoming"}
+    assert set(body) == {"today", "overdue", "upcoming", "timezone"}
     queries = [c for c in fake_db.calls if c[1] == "tasks"]
     assert len(queries) == 3, "each queue should be its own filtered query"
     for _, _, kwargs in queries:
         assert kwargs["params"]["owner_id"] == f"eq.{test_user.sub}"
-        assert "due_date" in kwargs["params"]
+        assert "due_at" in kwargs["params"]
+
+
+def test_follow_up_day_boundaries_use_the_callers_timezone(authed_client, fake_db, test_user):
+    """A server in UTC and an agent in IST disagree about "today" for 5.5 hours a day."""
+    from datetime import datetime, timezone as dt_timezone
+    from zoneinfo import ZoneInfo
+
+    fake_db.responses["GET tasks"] = FakeResult([])
+    fake_db.responses["GET users"] = FakeResult([{"id": test_user.sub, "role": "agent",
+                                                  "timezone": "Asia/Kolkata"}])
+
+    body = authed_client.get(f"{V1}/dashboard/follow-ups").json()
+    assert body["timezone"] == "Asia/Kolkata"
+
+    overdue_query = [c for c in fake_db.calls if c[1] == "tasks"][0]
+    boundary = overdue_query[2]["params"]["due_at"].removeprefix("lt.")
+    parsed = datetime.fromisoformat(boundary)
+
+    expected = datetime.now(dt_timezone.utc).astimezone(ZoneInfo("Asia/Kolkata")).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    assert parsed == expected, "midnight must be local midnight, not the server's"
+
+
+def test_unknown_timezone_falls_back_rather_than_failing(authed_client, fake_db, test_user):
+    fake_db.responses["GET tasks"] = FakeResult([])
+    fake_db.responses["GET users"] = FakeResult([{"id": test_user.sub, "role": "agent",
+                                                  "timezone": "Mars/Olympus_Mons"}])
+
+    response = authed_client.get(f"{V1}/dashboard/follow-ups")
+
+    assert response.status_code == 200
+    assert response.json()["timezone"] == "Asia/Kolkata"
 
 
 # --- Dashboard ----------------------------------------------------------------

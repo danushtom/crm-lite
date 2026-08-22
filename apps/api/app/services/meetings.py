@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.db.supabase import SupabaseClient
@@ -39,7 +39,8 @@ async def record_outcome(
     if lead_id is None or outcome not in OUTCOMES_REQUIRING_FOLLOWUP:
         return result, None
 
-    due = (date.today() + timedelta(days=FOLLOWUP_DELAY_DAYS)).isoformat()
+    # An absolute instant, so the follow-up lands correctly whatever zone the owner is in.
+    due = (datetime.now(timezone.utc) + timedelta(days=FOLLOWUP_DELAY_DAYS)).isoformat()
     label = MeetingOutcome(outcome).value.replace("_", " ")
     task = await db.insert(
         "tasks",
@@ -47,7 +48,7 @@ async def record_outcome(
             "lead_id": lead_id,
             "owner_id": owner_id,
             "title": f"Follow up after meeting ({label})",
-            "due_date": due,
+            "due_at": due,
             "status": "pending",
             "notes": changes.get("outcome_notes"),
         },

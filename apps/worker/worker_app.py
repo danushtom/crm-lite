@@ -41,15 +41,23 @@ def _today_iso() -> str:
 
 @app.task(name="worker_app.followup_reminder")
 def followup_reminder() -> str:
+    """Remind owners of tasks falling due in the next hour.
+
+    tasks.due_at is an absolute instant, so this no longer depends on the worker host's
+    calendar day agreeing with the owner's -- which it did not for anyone outside UTC.
+    """
     sb = _sb()
-    today = _today_iso()
+    now = datetime.now(timezone.utc)
+    window_end = now + timedelta(hours=1)
     rows = sb.request(
         "GET",
         "/tasks",
         params={
-            "select": "id,owner_id,title,lead_id",
-            "due_date": f"eq.{today}",
+            "select": "id,owner_id,title,lead_id,due_at",
+            "due_at": f"gte.{now.isoformat()}",
+            "and": f"(due_at.lt.{window_end.isoformat()})",
             "status": "eq.pending",
+            "limit": "1000",
         },
     )
     tasks = rows or []
@@ -60,9 +68,11 @@ def followup_reminder() -> str:
             sb,
             user_id=oid,
             notif_type="followup_reminder",
-            title="Follow-up due today",
+            title="Follow-up due soon",
             body=str(t.get("title") or "Task"),
-            dedupe_key=f"followup_reminder:{tid}:{today}",
+            # One reminder per task per due instant: rescheduling a task should be able to
+            # produce a fresh reminder, whereas a re-run within the window should not.
+            dedupe_key=f"followup_reminder:{tid}:{t.get('due_at')}",
             metadata={"task_id": tid, "lead_id": str(t.get("lead_id"))},
             source_task_id=tid,
         )
@@ -306,15 +316,16 @@ def post_meeting_prompt() -> str:
 @app.task(name="worker_app.overdue_escalation")
 def overdue_escalation() -> str:
     sb = _sb()
+    now_iso = datetime.now(timezone.utc).isoformat()
     today = date.today().isoformat()
     rows = sb.request(
         "GET",
         "/tasks",
         params={
-            "select": "id,owner_id,title,due_date",
-            "due_date": f"lt.{today}",
+            "select": "id,owner_id,title,due_at",
+            "due_at": f"lt.{now_iso}",
             "status": "eq.pending",
-            "order": "due_date.asc",
+            "order": "due_at.asc",
             "limit": "1000",
         },
     )
@@ -356,7 +367,12 @@ def daily_brief() -> str:
     tasks_today = sb.request(
         "GET",
         "/tasks",
-        params={"select": "id", "due_date": f"eq.{today}", "status": "eq.pending"},
+        params={
+            "select": "id",
+            "due_at": f"gte.{date.today().isoformat()}T00:00:00+00:00",
+            "and": f"(due_at.lt.{(date.today() + timedelta(days=1)).isoformat()}T00:00:00+00:00)",
+            "status": "eq.pending",
+        },
     )
     n_tasks = len(tasks_today or [])
     html = f"<p>Daily brief — follow-ups due today: {n_tasks}</p>"

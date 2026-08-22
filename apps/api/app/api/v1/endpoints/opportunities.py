@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import CurrentUserDep, DbDep
+from app.core.concurrency import IfMatchDep, set_etag, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.domain.enums import LeadStage, OpportunityStatus
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
@@ -83,12 +84,16 @@ async def get_opportunity_by_lead(lead_id: str, db: DbDep) -> OpportunitySummary
     description="Includes the full versioned proposal history.",
     responses=ERROR_RESPONSES,
 )
-async def get_opportunity(opportunity_id: str, db: DbDep) -> OpportunityDetail:
+async def get_opportunity(
+    opportunity_id: str, db: DbDep, response: Response
+) -> OpportunityDetail:
     result = await db.select(
         "opportunities",
         params={"select": "*,proposals(*)", "id": f"eq.{opportunity_id}"},
     )
-    return OpportunityDetail.model_validate(result.one("Opportunity"))
+    row = result.one("Opportunity")
+    set_etag(response, row)
+    return OpportunityDetail.model_validate(row)
 
 
 @router.patch(
@@ -99,7 +104,11 @@ async def get_opportunity(opportunity_id: str, db: DbDep) -> OpportunityDetail:
     responses=ERROR_RESPONSES,
 )
 async def update_opportunity(
-    opportunity_id: str, body: OpportunityUpdate, db: DbDep
+    opportunity_id: str,
+    body: OpportunityUpdate,
+    db: DbDep,
+    response: Response,
+    if_match: IfMatchDep,
 ) -> Opportunity:
     changes = OpportunityUpdate.model_validate(body.changes()).model_dump(
         exclude_unset=True, mode="json"
@@ -108,9 +117,20 @@ async def update_opportunity(
         result = await db.select(
             "opportunities", params={"select": "*", "id": f"eq.{opportunity_id}"}
         )
-        return Opportunity.model_validate(result.one("Opportunity"))
-    result = await db.update("opportunities", {"id": f"eq.{opportunity_id}"}, changes)
-    return Opportunity.model_validate(result.one("Opportunity"))
+        row = result.one("Opportunity")
+        set_etag(response, row)
+        return Opportunity.model_validate(row)
+
+    row = await update_guarded(
+        db,
+        "opportunities",
+        record_id=opportunity_id,
+        changes=changes,
+        if_match=if_match,
+        what="Opportunity",
+    )
+    set_etag(response, row)
+    return Opportunity.model_validate(row)
 
 
 # --- Proposals -----------------------------------------------------------------

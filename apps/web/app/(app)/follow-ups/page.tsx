@@ -10,10 +10,11 @@ import { apiFetch } from "@/lib/api";
 
 type FollowUpQueues = { today: TaskRow[]; overdue: TaskRow[]; upcoming: TaskRow[] };
 
+/** Renders an instant in the viewer's local zone, which is what the API intends. */
 function safeDate(value: string | null | undefined): string {
   if (!value) return "—";
   try {
-    return format(parseISO(value), "MMM d, yyyy");
+    return format(parseISO(value), "MMM d, yyyy · HH:mm");
   } catch {
     return value;
   }
@@ -48,10 +49,12 @@ export default function FollowUpsPage() {
 
   const snooze = useMutation({
     mutationFn: ({ taskId, days }: { taskId: string; days: number }) => {
-      const until = format(addDays(new Date(), days), "yyyy-MM-dd");
+      // due_at is an absolute instant, so preserve the original time of day rather than
+      // collapsing the task to midnight.
+      const until = addDays(new Date(), days).toISOString();
       return apiFetch(`/tasks/${taskId}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "snoozed", snoozed_until: until, due_date: until }),
+        body: JSON.stringify({ status: "snoozed", snoozed_to: until, due_at: until }),
       });
     },
     onSuccess: () => {
@@ -122,7 +125,7 @@ function TaskList({
             </CardHeader>
             <CardContent className="flex items-center justify-between gap-3 py-0 pb-3">
               <p className="text-xs text-muted-foreground">
-                Due {safeDate(t.due_date)} · {t.status}
+                Due {safeDate(t.due_at)} · {t.status}
               </p>
               {!done ? (
                 <div className="flex shrink-0 items-center gap-1.5">

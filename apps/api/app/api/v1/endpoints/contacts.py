@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import DbDep
+from app.core.concurrency import IfMatchDep, set_etag, update_guarded
 from app.core.errors import ConflictError, ForbiddenError
 from app.core.pagination import Page, PageParamsDep
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
@@ -69,9 +70,11 @@ async def create_contact(body: ContactCreate, db: DbDep, response: Response) -> 
     summary="Get a contact",
     responses=ERROR_RESPONSES,
 )
-async def get_contact(contact_id: str, db: DbDep) -> Contact:
+async def get_contact(contact_id: str, db: DbDep, response: Response) -> Contact:
     result = await db.select("contacts", params={"select": "*", "id": f"eq.{contact_id}"})
-    return Contact.model_validate(result.one("Contact"))
+    row = result.one("Contact")
+    set_etag(response, row)
+    return Contact.model_validate(row)
 
 
 @router.patch(
@@ -80,16 +83,26 @@ async def get_contact(contact_id: str, db: DbDep) -> Contact:
     summary="Update a contact",
     responses=ERROR_RESPONSES,
 )
-async def update_contact(contact_id: str, body: ContactUpdate, db: DbDep) -> Contact:
+async def update_contact(
+    contact_id: str,
+    body: ContactUpdate,
+    db: DbDep,
+    response: Response,
+    if_match: IfMatchDep,
+) -> Contact:
     changes = body.changes()
     if not changes:
-        return await get_contact(contact_id, db)
-    result = await db.update(
-        "contacts", {"id": f"eq.{contact_id}"}, ContactUpdate.model_validate(changes).model_dump(
-            exclude_unset=True, mode="json"
-        )
+        return await get_contact(contact_id, db, response)
+    row = await update_guarded(
+        db,
+        "contacts",
+        record_id=contact_id,
+        changes=ContactUpdate.model_validate(changes).model_dump(exclude_unset=True, mode="json"),
+        if_match=if_match,
+        what="Contact",
     )
-    return Contact.model_validate(result.one("Contact"))
+    set_etag(response, row)
+    return Contact.model_validate(row)
 
 
 @router.delete(

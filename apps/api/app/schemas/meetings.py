@@ -23,6 +23,10 @@ class Meeting(APIModel):
     outcome: MeetingOutcome | None = None
     outcome_notes: str | None = None
     created_at: datetime | None = None
+    version: int = Field(
+        default=1,
+        description="Monotonic row version. Returned as an ETag; send it back via If-Match.",
+    )
 
 
 class MeetingCreate(StrictAPIModel):

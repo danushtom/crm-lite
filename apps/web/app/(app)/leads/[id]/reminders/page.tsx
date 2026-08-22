@@ -31,7 +31,7 @@ type MeetingRow = {
 type TaskRow = {
   id: string;
   title: string;
-  due_date: string;
+  due_at: string;
   status: string;
 };
 
@@ -152,7 +152,7 @@ export default function RemindersPage() {
               const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
               return calendarDays.map((day) => {
-                const dayTasks = tasks.filter((t) => isSameDay(parseISO(t.due_date), day));
+                const dayTasks = tasks.filter((t) => isSameDay(parseISO(t.due_at), day));
                 const dayMeetings = meetings.filter((m) => isSameDay(parseISO(m.scheduled_at), day));
 
                 return (

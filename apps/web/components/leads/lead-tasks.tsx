@@ -3,6 +3,7 @@
 import type { TaskRow } from "@dracara/types";
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, cn } from "@dracara/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { format, parseISO } from "date-fns";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -27,7 +28,9 @@ export function LeadTasks({ leadId }: { leadId: string }) {
     mutationFn: () =>
       apiFetch(`/leads/${leadId}/tasks`, {
         method: "POST",
-        body: JSON.stringify({ title, due_date: due }),
+        // <input type="date"> gives a local calendar date; the API stores an instant, so
+        // anchor it at 09:00 local rather than implying midnight UTC.
+        body: JSON.stringify({ title, due_at: new Date(`${due}T09:00`).toISOString() }),
       }),
     onSuccess: () => {
       invalidate();
@@ -83,7 +86,7 @@ export function LeadTasks({ leadId }: { leadId: string }) {
                 >
                   <span className={cn(done && "text-muted-foreground line-through")}>{t.title}</span>
                   <span className="flex shrink-0 items-center gap-2">
-                    <span className="text-muted-foreground">{t.due_date ?? ""}</span>
+                    <span className="text-muted-foreground">{t.due_at ? format(parseISO(t.due_at), "MMM d, HH:mm") : ""}</span>
                     {!done ? (
                       <Button
                         size="sm"

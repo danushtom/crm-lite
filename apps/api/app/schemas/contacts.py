@@ -51,6 +51,10 @@ class Contact(APIModel):
     source: LeadSource | None = None
     is_primary: bool = False
     created_at: datetime | None = None
+    version: int = Field(
+        default=1,
+        description="Monotonic row version. Returned as an ETag; send it back via If-Match.",
+    )
 
 
 class ContactWithCompany(Contact):

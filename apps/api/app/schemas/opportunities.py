@@ -76,6 +76,10 @@ class Opportunity(APIModel):
     status: OpportunityStatus = OpportunityStatus.ACTIVE
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    version: int = Field(
+        default=1,
+        description="Monotonic row version. Returned as an ETag; send it back via If-Match.",
+    )
 
 
 class OpportunityDetail(Opportunity):
@@ -103,6 +107,10 @@ class OpportunitySummary(APIModel):
     deal_probability: int = 50
     priority_score: int = 0
     updated_at: datetime | None = None
+    version: int = Field(
+        default=1,
+        description="Monotonic row version. Returned as an ETag; send it back via If-Match.",
+    )
 
 
 class LeadConversion(APIModel):

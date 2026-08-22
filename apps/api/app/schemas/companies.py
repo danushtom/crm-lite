@@ -48,3 +48,7 @@ class Company(APIModel):
     segment: CompanySegment | None = None
     created_by: str | None = None
     created_at: datetime | None = None
+    version: int = Field(
+        default=1,
+        description="Monotonic row version. Returned as an ETag; send it back via If-Match.",
+    )

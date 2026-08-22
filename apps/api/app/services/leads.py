@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.core.concurrency import PreconditionFailedError, update_guarded
 from app.core.errors import ConflictError, NotFoundError
 from app.db.supabase import SupabaseClient
 from app.domain.scoring import compute_priority_score
@@ -98,13 +99,43 @@ async def create_lead(db: SupabaseClient, payload: dict[str, Any], owner_id: str
     return result.one("Lead")
 
 
-async def update_lead(db: SupabaseClient, lead_id: str, changes: dict[str, Any]) -> dict[str, Any]:
-    """Apply a partial update, routing pipeline fields to the opportunity row."""
+async def assert_version(db: SupabaseClient, lead_id: str, expected: int) -> None:
+    """Reject the write when the caller's copy of the lead is stale."""
+    lead = await get_lead(db, lead_id)
+    current = int(lead.get("version") or 0)
+    if current != expected:
+        raise PreconditionFailedError(
+            f"Lead has been modified since you last read it (expected version {expected}, "
+            f"current version {current}). Refetch and reapply your changes.",
+            extra={"current_version": current},
+        )
+
+
+async def update_lead(
+    db: SupabaseClient,
+    lead_id: str,
+    changes: dict[str, Any],
+    *,
+    if_match: int | None | str = None,
+) -> dict[str, Any]:
+    """Apply a partial update, routing pipeline fields to the opportunity row.
+
+    Concurrency: when the caller supplies a version, the write to ``leads`` is made
+    conditional on it, so two clients editing the same lead cannot silently overwrite one
+    another. A caveat worth stating plainly -- a lead update can touch two tables, and these
+    are separate PostgREST requests rather than one transaction. The version check is atomic
+    with the ``leads`` write, but a pipeline-only change is guarded by a preceding read.
+    Closing that last gap means moving this whole operation into a SQL function.
+    """
     if not changes:
         return await get_lead(db, lead_id)
 
     pipeline_changes = {k: v for k, v in changes.items() if k in PIPELINE_FIELDS}
     lead_changes = {k: v for k, v in changes.items() if k not in PIPELINE_FIELDS}
+
+    # No leads-table write to attach the condition to, so check before touching anything.
+    if isinstance(if_match, int) and not lead_changes:
+        await assert_version(db, lead_id, if_match)
 
     if pipeline_changes:
         opportunity = await get_opportunity_for_lead(db, lead_id)
@@ -114,7 +145,14 @@ async def update_lead(db: SupabaseClient, lead_id: str, changes: dict[str, Any])
         await db.update("opportunities", {"id": f"eq.{opportunity['id']}"}, opportunity_body)
 
     if lead_changes:
-        await db.update("leads", {"id": f"eq.{lead_id}"}, lead_changes)
+        await update_guarded(
+            db,
+            "leads",
+            record_id=lead_id,
+            changes=lead_changes,
+            if_match=if_match,
+            what="Lead",
+        )
 
     # Read back after both writes so the score reflects trigger-synced values.
     return await sync_priority_score(db, lead_id)
