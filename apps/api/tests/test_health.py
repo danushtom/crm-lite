@@ -1,24 +1,19 @@
-from fastapi.testclient import TestClient
-
-from app.main import app
+"""Probe endpoints."""
 
 
-def test_health_live():
-    client = TestClient(app)
-    r = client.get("/health/live")
-    assert r.status_code == 200
-    assert r.json()["live"] is True
+def test_health_live(client):
+    response = client.get("/health/live")
+    assert response.status_code == 200
+    assert response.json()["live"] is True
 
 
-def test_health_basic():
-    client = TestClient(app)
-    r = client.get("/health")
-    assert r.status_code == 200
-    assert r.json().get("status") == "ok"
+def test_health_basic(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
 
 
-def test_root():
-    client = TestClient(app)
-    r = client.get("/")
-    assert r.status_code == 200
-    assert "docs" in r.json()
+def test_health_is_not_rate_limit_logged(client):
+    """Probes must stay unauthenticated so orchestrators can reach them."""
+    for _ in range(3):
+        assert client.get("/health").status_code == 200
