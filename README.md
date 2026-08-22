@@ -3,7 +3,7 @@
 > A purpose-built Deal Flow Command Center engineered for high-value software project sales cycles.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
+![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi)
 ![Supabase](https://img.shields.io/badge/Supabase-DB-3ECF8E?logo=supabase)
 
@@ -25,17 +25,21 @@ Dracara Growth OS is not a generic CRM. While platforms like Salesforce, HubSpot
 This project uses a decoupled client-server architecture within a **Turborepo** monorepo:
 
 ### Frontend (`apps/web`)
-- **Framework:** Next.js 16 (App Router)
+- **Framework:** Next.js 15 (App Router)
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS + shadcn/ui
 - **State Management:** TanStack Query v5
 
 ### Backend (`apps/api` & `apps/worker`)
-- **Framework:** FastAPI (Python 3.12)
+- **Framework:** FastAPI (Python 3.12), layered `api / services / domain / db / core`
+- **API surface:** versioned at `/api/v1`; OpenAPI at `/openapi.json`, docs at `/docs`
+- **Conventions:** paginated `{items, page}` collections, RFC 9457 Problem Details errors
 - **Background Jobs:** Celery + Redis
 - **Database:** Supabase (PostgreSQL 15) with Row-Level Security (RLS)
 - **Storage:** Supabase Storage
-- **Auth:** Supabase Auth (JWT, OAuth)
+- **Auth:** Supabase Auth — access tokens verified against the project JWKS (ES256/RS256)
+
+See [`apps/api/README.md`](apps/api/README.md) for the backend layout and conventions.
 
 ## 📂 Repository Structure
 
@@ -103,8 +107,11 @@ Start the backend server (in a separate terminal):
 ```bash
 cd apps/api
 source .venv/bin/activate
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8000
 ```
+
+The API is then reachable at `http://localhost:8000`, with resources under `/api/v1`
+and interactive documentation at `http://localhost:8000/docs`.
 
 ## 📜 License
 
