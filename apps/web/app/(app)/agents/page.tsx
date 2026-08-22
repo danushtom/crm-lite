@@ -3,13 +3,13 @@
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from "@dracara/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiList } from "@/lib/api";
 
 export default function AgentsPage() {
   const qc = useQueryClient();
   const { data, error, isLoading } = useQuery({
     queryKey: ["agents"],
-    queryFn: () => apiFetch<Record<string, unknown>[]>("/agents"),
+    queryFn: () => apiList<Record<string, unknown>>("/agents"),
     retry: false,
   });
 

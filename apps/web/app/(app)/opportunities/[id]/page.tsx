@@ -156,7 +156,7 @@ export default function OpportunityOverview() {
                 <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Requirements Summary</h4>
                 <div className="rounded-lg bg-muted/20 p-4 border border-border/40">
                   <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed italic text-muted-foreground">
-                    "{opp.requirements_doc || "Requirements document has not been drafted yet."}"
+                    &ldquo;{opp.requirements_doc || "Requirements document has not been drafted yet."}&rdquo;
                   </p>
                 </div>
               </div>

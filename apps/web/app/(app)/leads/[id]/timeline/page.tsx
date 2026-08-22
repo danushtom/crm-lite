@@ -4,7 +4,7 @@ import { Button, Card, CardContent } from "@dracara/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiList } from "@/lib/api";
 
 export default function TimelinePage() {
   const { id } = useParams<{ id: string }>();
@@ -12,7 +12,7 @@ export default function TimelinePage() {
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["activities", id],
-    queryFn: () => apiFetch<Record<string, unknown>[]>(`/leads/${id}/activities`),
+    queryFn: () => apiList<Record<string, unknown>>(`/leads/${id}/activities`),
   });
 
   const [description, setDescription] = useState("");

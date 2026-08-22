@@ -1,14 +1,14 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from "@dracara/ui";
-import { scoreTier, type CompanyRow, type ContactRow, type LeadRow, type LeadIntelligenceRow, type ActivityRow } from "@dracara/types";
+import { scoreTier, type CompanyRow, type ContactRow, type LeadRow, type LeadIntelligenceRow, type ActivityRow, type OpportunitySummaryRow } from "@dracara/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LeadTasks } from "@/components/leads/lead-tasks";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiFetchOptional } from "@/lib/api";
 import {
   Building2,
   Calendar,
@@ -97,13 +97,15 @@ export default function LeadOverviewPage() {
     enabled: !!lead?.primary_contact_id,
   });
 
-  const { data: oppRows = [] } = useQuery({
+  const { data: opportunity = null } = useQuery({
     queryKey: ["opportunity-by-lead", id],
-    queryFn: () => apiFetch<Record<string, unknown>[]>(`/opportunities?lead_id=${encodeURIComponent(id)}`),
+    queryFn: () =>
+      apiFetchOptional<OpportunitySummaryRow>(`/opportunities/by-lead/${encodeURIComponent(id)}`),
     enabled: !!id,
   });
 
-  const opportunityId = oppRows[0]?.id != null ? String(oppRows[0].id) : null;
+  const opportunityId = opportunity ? String(opportunity.id) : null;
+  const oppRows = opportunity ? [opportunity] : [];
 
   const update = useMutation({
     mutationFn: (patch: Record<string, unknown>) =>

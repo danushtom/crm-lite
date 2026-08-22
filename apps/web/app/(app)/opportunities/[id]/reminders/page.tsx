@@ -4,7 +4,7 @@ import { Button, Card, CardContent, CardHeader, CardTitle, cn } from "@dracara/u
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiList } from "@/lib/api";
 import {
   addMonths,
   eachDayOfInterval,
@@ -48,13 +48,13 @@ export default function OpportunityRemindersPage() {
 
   const { data: meetings = [] } = useQuery({
     queryKey: ["meetings", leadId],
-    queryFn: () => apiFetch<MeetingRow[]>(`/leads/${leadId}/meetings`),
+    queryFn: () => apiList<MeetingRow>(`/leads/${leadId}/meetings`),
     enabled: !!leadId,
   });
 
   const { data: tasks = [] } = useQuery({
     queryKey: ["tasks", leadId],
-    queryFn: () => apiFetch<TaskRow[]>(`/leads/${leadId}/tasks`),
+    queryFn: () => apiList<TaskRow>(`/leads/${leadId}/tasks`),
     enabled: !!leadId,
   });
 

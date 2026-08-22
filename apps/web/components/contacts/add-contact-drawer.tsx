@@ -13,7 +13,8 @@ import {
 } from "@dracara/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiListAll } from "@/lib/api";
+import { compactPayload } from "@/lib/forms";
 import { Plus, UserPlus, Loader2 } from "lucide-react";
 
 export function AddContactDrawer() {
@@ -32,14 +33,17 @@ export function AddContactDrawer() {
 
   const { data: companies = [] } = useQuery({
     queryKey: ["companies", "add-contact"],
-    queryFn: () => apiFetch<any[]>("/companies"),
+    queryFn: () => apiListAll<any>("/companies"),
   });
 
   const createContact = useMutation({
-    mutationFn: () => apiFetch("/contacts", { 
-      method: "POST", 
-      body: JSON.stringify(form) 
-    }),
+    mutationFn: () =>
+      // Optional enum/email fields must be omitted rather than sent as "" — the API
+      // validates strictly and would reject an empty string with a 422.
+      apiFetch("/contacts", {
+        method: "POST",
+        body: JSON.stringify(compactPayload(form)),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["contacts"] });
       setOpen(false);

@@ -19,7 +19,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useMemo } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiListAll } from "@/lib/api";
 
 type CompanyStage = "Won" | "Leads" | "Lost" | "Discovery";
 
@@ -62,17 +62,17 @@ function toK(n: number): string {
 export default function CompaniesPage() {
   const { data: companies = [], isLoading: companiesLoading, error: companiesError } = useQuery({
     queryKey: ["companies", "list"],
-    queryFn: () => apiFetch<CompanyRow[]>("/companies"),
+    queryFn: () => apiListAll<CompanyRow>("/companies"),
   });
 
   const { data: leads = [], isLoading: leadsLoading, error: leadsError } = useQuery({
     queryKey: ["leads", "companies-page"],
-    queryFn: () => apiFetch<LeadRow[]>("/leads?limit=200"),
+    queryFn: () => apiListAll<LeadRow>("/leads"),
   });
 
   const { data: contacts = [], isLoading: contactsLoading, error: contactsError } = useQuery({
     queryKey: ["contacts", "companies-page"],
-    queryFn: () => apiFetch<ContactRow[]>("/contacts"),
+    queryFn: () => apiListAll<ContactRow>("/contacts"),
   });
 
   const isLoading = companiesLoading || leadsLoading || contactsLoading;

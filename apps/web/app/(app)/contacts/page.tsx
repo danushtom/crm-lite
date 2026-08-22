@@ -37,7 +37,7 @@ import {
   Check,
 } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiListAll } from "@/lib/api";
 import Link from "next/link";
 import { AddContactDrawer } from "@/components/contacts/add-contact-drawer";
 import { cn } from "@dracara/ui";
@@ -124,12 +124,12 @@ export default function ContactsPage() {
 
   const { data: rows = [], isLoading, error } = useQuery({
     queryKey: ["contacts", "list"],
-    queryFn: () => apiFetch<ContactWithCompany[]>("/contacts"),
+    queryFn: () => apiListAll<ContactWithCompany>("/contacts"),
   });
 
   const { data: leads = [] } = useQuery({
     queryKey: ["leads", "contacts-page"],
-    queryFn: () => apiFetch<LeadRow[]>("/leads?limit=200"),
+    queryFn: () => apiListAll<LeadRow>("/leads"),
   });
 
   const filteredAndSortedRows = useMemo(() => {

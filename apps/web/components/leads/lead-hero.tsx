@@ -1,10 +1,10 @@
 "use client";
 
 import { Badge, Button, Card, CardContent } from "@dracara/ui";
-import { scoreTier, type CompanyRow, type ContactRow } from "@dracara/types";
+import { scoreTier, type CompanyRow, type ContactRow, type OpportunitySummaryRow } from "@dracara/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiFetchOptional } from "@/lib/api";
 import { ArrowRight, ChevronRight, Layers, Mail, MapPin, Sparkles, UserCircle } from "lucide-react";
 
 type CompanyStage = "Won" | "Leads" | "Lost" | "Discovery";
@@ -54,13 +54,14 @@ export function LeadHero({ id }: { id: string }) {
     enabled: !!lead?.primary_contact_id,
   });
 
-  const { data: oppRows = [] } = useQuery({
+  const { data: opportunity = null } = useQuery({
     queryKey: ["opportunity-by-lead", id],
-    queryFn: () => apiFetch<Record<string, unknown>[]>(`/opportunities?lead_id=${encodeURIComponent(id)}`),
+    queryFn: () =>
+      apiFetchOptional<OpportunitySummaryRow>(`/opportunities/by-lead/${encodeURIComponent(id)}`),
     enabled: !!id,
   });
 
-  const opportunityId = oppRows[0]?.id != null ? String(oppRows[0].id) : null;
+  const opportunityId = opportunity ? String(opportunity.id) : null;
 
   const convert = useMutation({
     mutationFn: () => apiFetch(`/leads/${id}/convert`, { method: "POST", body: "{}" }),

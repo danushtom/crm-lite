@@ -184,6 +184,21 @@ export interface OpportunityRow {
   updated_at: string;
 }
 
+/** Shape returned by `GET /opportunities?lead_id=` — a light subset of {@link OpportunityRow}. */
+export type OpportunitySummaryRow = Pick<
+  OpportunityRow,
+  | "id"
+  | "lead_id"
+  | "title"
+  | "status"
+  | "stage"
+  | "quoted_value"
+  | "currency"
+  | "deal_probability"
+  | "priority_score"
+  | "updated_at"
+>;
+
 export type ProposalDocStatus = "draft" | "sent" | "under_review" | "accepted" | "rejected";
 
 export interface ProposalRow {

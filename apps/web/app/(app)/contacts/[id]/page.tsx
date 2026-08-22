@@ -41,7 +41,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiList, apiListAll } from "@/lib/api";
 
 type ContactDetailTab = "overview" | "notes" | "conversations" | "timeline" | "reminders";
 
@@ -99,7 +99,7 @@ export default function ContactDetailsPage() {
 
   const { data: leads = [] } = useQuery({
     queryKey: ["leads", "contact-details"],
-    queryFn: () => apiFetch<LeadRow[]>("/leads?limit=200"),
+    queryFn: () => apiListAll<LeadRow>("/leads"),
   });
 
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -117,13 +117,13 @@ export default function ContactDetailsPage() {
 
   const { data: tasks = [] } = useQuery({
     queryKey: ["tasks", primaryLead?.id],
-    queryFn: () => (primaryLead ? apiFetch<TaskRow[]>(`/leads/${primaryLead.id}/tasks`) : Promise.resolve([])),
+    queryFn: () => (primaryLead ? apiList<TaskRow>(`/leads/${primaryLead.id}/tasks`) : Promise.resolve([])),
     enabled: !!primaryLead,
   });
 
   const { data: meetings = [] } = useQuery({
     queryKey: ["meetings", primaryLead?.id],
-    queryFn: () => (primaryLead ? apiFetch<MeetingRow[]>(`/leads/${primaryLead.id}/meetings`) : Promise.resolve([])),
+    queryFn: () => (primaryLead ? apiList<MeetingRow>(`/leads/${primaryLead.id}/meetings`) : Promise.resolve([])),
     enabled: !!primaryLead,
   });
 
@@ -617,7 +617,7 @@ export default function ContactDetailsPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setActiveTab("interactions")}
+                      onClick={() => setActiveTab("timeline")}
                       className="flex items-center justify-between rounded-lg border border-border/50 px-3 py-2.5 text-left text-sm font-medium hover:bg-muted/50"
                     >
                       Lead interactions
@@ -643,7 +643,7 @@ export default function ContactDetailsPage() {
                   <CardTitle className="text-base font-semibold">Activity snapshot</CardTitle>
                   <p className="text-xs font-normal text-muted-foreground">Latest signals across this contact</p>
                 </div>
-                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setActiveTab("interactions")}>
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setActiveTab("timeline")}>
                   View interactions
                   <ArrowRight className="ml-1 h-3.5 w-3.5" />
                 </Button>

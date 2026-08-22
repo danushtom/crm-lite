@@ -8,7 +8,7 @@ import { format, parseISO } from "date-fns";
 import { BarChart3 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiListAll } from "@/lib/api";
 import {
   OPPORTUNITY_KANBAN_COLUMNS,
   columnForStage,
@@ -161,7 +161,7 @@ export function KanbanBoard() {
 
   const { data: opportunities = [], isLoading } = useQuery({
     queryKey: ["opportunities", "pipeline"],
-    queryFn: () => apiFetch<OpportunityWithLead[]>("/opportunities?limit=500"),
+    queryFn: () => apiListAll<OpportunityWithLead>("/opportunities"),
   });
 
   const move = useMutation({
@@ -207,7 +207,8 @@ export function KanbanBoard() {
     const opp = opportunities.find((o) => o.id === oppId);
     if (!opp) return;
 
-    if (opp.stage === targetColumn.dropStage) return;
+    // Same column: the card already sits in this swimlane, so keep its granular stage.
+    if (targetColumn.stages.includes(opp.stage)) return;
 
     move.mutate({ leadId: opp.lead_id, stage: targetColumn.dropStage });
   }

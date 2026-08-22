@@ -8,7 +8,7 @@ import {
   Briefcase,
   UsersRound,
   FileText,
-  Mail,
+  CalendarDays,
   BarChart3,
   Settings,
   LogOut,
@@ -19,7 +19,7 @@ import {
   ChevronRight,
   BadgeCheck,
   Search,
-  Workflow,
+  Users,
   Target,
 } from "lucide-react";
 import { Button, cn, Input } from "@dracara/ui";
@@ -34,10 +34,10 @@ const nav = [
   { href: "/leads", label: "Leads", icon: Target },
   { href: "/opportunities", label: "Opportunities", icon: KanbanSquare },
   { href: "/companies", label: "Companies", icon: Briefcase },
-  { href: "/follow-ups", label: "Notes", icon: FileText },
-  { href: "/calendar", label: "Emails", icon: Mail },
+  { href: "/follow-ups", label: "Follow-ups", icon: FileText },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/agents", label: "Workflows", icon: Workflow },
+  { href: "/agents", label: "Agents", icon: Users },
 ];
 
 export function AppShell({

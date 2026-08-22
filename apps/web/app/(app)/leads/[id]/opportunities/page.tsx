@@ -1,19 +1,24 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@dracara/ui";
+import type { OpportunitySummaryRow } from "@dracara/types";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
+import { apiFetchOptional } from "@/lib/api";
 import { ChevronRight, Layers } from "lucide-react";
 
 export default function LeadOpportunitiesPage() {
   const { id } = useParams<{ id: string }>();
 
-  const { data: oppRows = [], isLoading } = useQuery({
+  const { data: opportunity = null, isLoading } = useQuery({
     queryKey: ["opportunity-by-lead", id],
-    queryFn: () => apiFetch<Record<string, unknown>[]>(`/opportunities?lead_id=${encodeURIComponent(id)}`),
+    queryFn: () =>
+      apiFetchOptional<OpportunitySummaryRow>(`/opportunities/by-lead/${encodeURIComponent(id)}`),
   });
+
+  // One opportunity per lead; kept as a list so the empty and populated states share markup.
+  const oppRows = opportunity ? [opportunity] : [];
 
   const humanizeUnderscore = (s: string) =>
     s

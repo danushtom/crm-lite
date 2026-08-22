@@ -3,7 +3,7 @@
 import { Badge, Button, Card, CardContent } from "@dracara/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiList } from "@/lib/api";
 import { Clock, Info } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -19,7 +19,7 @@ export default function OpportunityInteractionsPage() {
   // Fetch activities for that lead
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["activities", opp?.lead_id],
-    queryFn: () => apiFetch<Record<string, unknown>[]>(`/leads/${opp?.lead_id}/activities`),
+    queryFn: () => apiList<Record<string, unknown>>(`/leads/${opp?.lead_id}/activities`),
     enabled: !!opp?.lead_id,
   });
 

@@ -19,7 +19,8 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useMemo } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiListAll } from "@/lib/api";
+import { AddLeadDrawer } from "@/components/leads/add-lead-drawer";
 
 type LeadWithCo = LeadRow & { companies?: { name?: string; segment?: string | null } | null };
 
@@ -56,12 +57,12 @@ function toK(n: number): string {
 export default function LeadsPage() {
   const { data: leads = [], isLoading: leadsLoading, error: leadsError } = useQuery({
     queryKey: ["leads", "leads-page"],
-    queryFn: () => apiFetch<LeadWithCo[]>("/leads?limit=200"),
+    queryFn: () => apiListAll<LeadWithCo>("/leads"),
   });
 
   const { data: contacts = [] } = useQuery({
     queryKey: ["contacts", "leads-page"],
-    queryFn: () => apiFetch<ContactRow[]>("/contacts"),
+    queryFn: () => apiListAll<ContactRow>("/contacts"),
   });
 
   // Only block on leads — contacts resolves incrementally and fills in contact names
@@ -159,11 +160,7 @@ export default function LeadsPage() {
               Gallery
             </button>
           </div>
-          <Button size="sm" className="h-8 gap-1.5 rounded-md bg-[#0A1128] px-3 text-xs font-semibold text-white hover:bg-[#1a2a53]">
-            <Plus className="h-3.5 w-3.5" />
-            Add New
-            <ChevronDown className="h-3.5 w-3.5 text-white/80" />
-          </Button>
+          <AddLeadDrawer />
         </div>
       </div>
 

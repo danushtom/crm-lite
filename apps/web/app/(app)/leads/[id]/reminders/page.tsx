@@ -4,7 +4,7 @@ import { Button, Card, CardContent, CardHeader, CardTitle, Input, cn } from "@dr
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiList } from "@/lib/api";
 import {
   addMonths,
   eachDayOfInterval,
@@ -41,12 +41,12 @@ export default function RemindersPage() {
 
   const { data: meetings = [] } = useQuery({
     queryKey: ["meetings", id],
-    queryFn: () => apiFetch<MeetingRow[]>(`/leads/${id}/meetings`),
+    queryFn: () => apiList<MeetingRow>(`/leads/${id}/meetings`),
   });
 
   const { data: tasks = [] } = useQuery({
     queryKey: ["tasks", id],
-    queryFn: () => apiFetch<TaskRow[]>(`/leads/${id}/tasks`),
+    queryFn: () => apiList<TaskRow>(`/leads/${id}/tasks`),
   });
 
   const [title, setTitle] = useState("Discovery call");

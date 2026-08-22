@@ -17,7 +17,7 @@ import {
   YAxis,
 } from "recharts";
 import { createClient } from "@/lib/supabase/client";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiListAll } from "@/lib/api";
 import { DashboardCalendarWidget, type DashboardMeeting } from "@/components/dashboard/dashboard-calendar-widget";
 
 type DashboardPayload = {
@@ -54,7 +54,7 @@ export default function DashboardPage() {
 
   const { data: leads = [] } = useQuery({
     queryKey: ["leads", "dashboard"],
-    queryFn: () => apiFetch<LeadWithCo[]>("/leads?limit=500"),
+    queryFn: () => apiListAll<LeadWithCo>("/leads"),
   });
 
   const { data: meetings = [] } = useQuery({
@@ -113,7 +113,7 @@ export default function DashboardPage() {
     pipeline > 0 ? Math.round(((weighted / pipeline) * 1000) / 10) : 0;
 
   const revenueSeries = useMemo(() => {
-    const months = ["Jul", "Aug", "Sep", "Oct", "Nov", "Jan"];
+    const months = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const base = pipeline > 0 ? pipeline / 6 : 120000;
     return months.map((m, i) => ({
       m,
