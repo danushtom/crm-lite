@@ -42,7 +42,7 @@ def dimension_authority(intelligence: dict[str, Any] | None) -> float:
     text = f"{dm}\n{sn}".lower()
     if any(k in text for k in ("cto", "founder", "ceo", "vp", "director")):
         return 85.0
-    if len(dm.strip()) > 20:
+    if len(str(dm).strip()) > 20:
         return 75.0
     return 55.0
 
