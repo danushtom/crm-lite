@@ -43,4 +43,5 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: apps/worker/requirements.txt
-      - run: cd apps/worker && python -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python -c "import worker_app; import scoring; import supabase_admin"
+      - run: cd apps/worker && python -m venv .venv && .venv/bin/pip install -r requirements.txt
+      - run: cd apps/worker && .venv/bin/python -m pytest -q

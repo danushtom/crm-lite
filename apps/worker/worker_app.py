@@ -73,20 +73,22 @@ def followup_reminder() -> str:
 def no_touch_alert() -> str:
     sb = _sb()
     cutoff = date.today() - timedelta(days=14)
+    # Filter upstream instead of pulling every lead and discarding most of them in Python:
+    # already-flagged rows and recently-contacted rows can never produce an alert.
     rows = sb.request(
         "GET",
         "/leads",
-        params={"select": "id,owner_id,last_contact_date,no_touch_alert", "limit": "5000"},
+        params={
+            "select": "id,owner_id,last_contact_date,no_touch_alert",
+            "no_touch_alert": "is.false",
+            "or": f"(last_contact_date.is.null,last_contact_date.lt.{cutoff.isoformat()})",
+            "limit": "5000",
+        },
     )
     leads = rows or []
     n = 0
     for row in leads:
-        if row.get("no_touch_alert"):
-            continue
         lcd = row.get("last_contact_date")
-        stale = lcd is None or (isinstance(lcd, str) and date.fromisoformat(lcd[:10]) < cutoff)
-        if not stale:
-            continue
         lid = str(row["id"])
         sb.request(
             "PATCH",
@@ -133,6 +135,14 @@ def score_recalculate() -> str:
             intelligence=intel,
             score_override=int(ov) if ov is not None else None,
         )
+
+        # Writing unconditionally was self-perpetuating: the PATCH fires leads_touch, which
+        # bumps updated_at, so the row falls inside the next run's "updated in the last hour"
+        # window. Every lead touched once stayed in scope forever and the job degenerated into
+        # rewriting the whole table hourly.
+        if int(lead.get("priority_score") or 0) == score:
+            continue
+
         sb.request(
             "PATCH",
             "/leads",
@@ -140,6 +150,21 @@ def score_recalculate() -> str:
             json_body={"priority_score": score},
             prefer="return=minimal",
         )
+
+        # The Kanban reads opportunities.priority_score. Updating only the lead left the
+        # board showing a stale score until something else happened to touch the opportunity.
+        opp_rows = sb.request(
+            "GET", "/opportunities", params={"select": "id,priority_score", "lead_id": f"eq.{lid}"}
+        )
+        opp = opp_rows[0] if opp_rows else None
+        if opp is not None and int(opp.get("priority_score") or 0) != score:
+            sb.request(
+                "PATCH",
+                "/opportunities",
+                params={"id": f"eq.{opp['id']}"},
+                json_body={"priority_score": score},
+                prefer="return=minimal",
+            )
         updated += 1
     return f"scores:{updated}"
 
@@ -236,6 +261,10 @@ def calendar_sync() -> str:
 def post_meeting_prompt() -> str:
     sb = _sb()
     now = datetime.now(timezone.utc)
+    # The prompt window is the 15 minutes after a meeting ends, so only recent meetings can
+    # ever qualify. Without a lower bound this scanned every scheduled meeting ever recorded,
+    # growing unboundedly while the job runs every five minutes.
+    window_start = (now - timedelta(hours=6)).isoformat()
     rows = sb.request(
         "GET",
         "/meetings",
@@ -243,6 +272,9 @@ def post_meeting_prompt() -> str:
             "select": "*",
             "status": "eq.scheduled",
             "outcome": "is.null",
+            "scheduled_at": f"gte.{window_start}",
+            "order": "scheduled_at.asc",
+            "limit": "500",
         },
     )
     meetings = rows or []
@@ -282,6 +314,8 @@ def overdue_escalation() -> str:
             "select": "id,owner_id,title,due_date",
             "due_date": f"lt.{today}",
             "status": "eq.pending",
+            "order": "due_date.asc",
+            "limit": "1000",
         },
     )
     tasks = rows or []
