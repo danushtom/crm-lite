@@ -167,15 +167,28 @@ export function KanbanBoard() {
   });
 
   const move = useApiMutation({
-    errorTitle: "Could not move card",    mutationFn: async ({ leadId, stage }: { leadId: string; stage: string }) => {
-      await apiFetch(`/leads/${leadId}/stage`, {
+    errorTitle: "Could not move card",
+    // Stage belongs to the pursuit. This used to PATCH /leads/{id}/stage, which went away
+    // when leads stopped carrying a mirrored copy of it.
+    mutationFn: async ({
+      opportunityId,
+      stage,
+      version,
+    }: {
+      opportunityId: string;
+      stage: string;
+      version: number;
+    }) => {
+      await apiFetch(`/opportunities/${opportunityId}`, {
         method: "PATCH",
+        headers: { "If-Match": `"${version}"` },
         body: JSON.stringify({ stage }),
       });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["opportunities"] });
       qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 
@@ -212,7 +225,11 @@ export function KanbanBoard() {
     // Same column: the card already sits in this swimlane, so keep its granular stage.
     if (targetColumn.stages.includes(opp.stage)) return;
 
-    move.mutate({ leadId: opp.lead_id, stage: targetColumn.dropStage });
+    move.mutate({
+      opportunityId: opp.id,
+      stage: targetColumn.dropStage,
+      version: opp.version,
+    });
   }
 
   const activeOpp = activeId ? opportunities.find((o) => o.id === activeId) : null;

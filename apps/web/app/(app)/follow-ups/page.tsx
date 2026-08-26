@@ -4,9 +4,10 @@ import type { TaskRow } from "@dracara/types";
 import { Button, Card, CardContent, CardHeader, CardTitle, cn } from "@dracara/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addDays, format, parseISO } from "date-fns";
-import { Check, Clock } from "lucide-react";
+import { Check, Clock, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
+import { useApiMutation } from "@/lib/use-api-mutation";
 
 type FollowUpQueues = { today: TaskRow[]; overdue: TaskRow[]; upcoming: TaskRow[] };
 
@@ -64,7 +65,16 @@ export default function FollowUpsPage() {
     onError: (e: Error) => toast.error(e.message || "Could not snooze task"),
   });
 
-  const pending = complete.isPending || snooze.isPending;
+  const remove = useApiMutation({
+    errorTitle: "Could not delete task",
+    mutationFn: (taskId: string) => apiFetch(`/tasks/${taskId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Task deleted");
+      invalidate();
+    },
+  });
+
+  const pending = complete.isPending || snooze.isPending || remove.isPending;
 
   if (isLoading || !data) return <p className="text-sm text-muted-foreground">Loading follow-up queues…</p>;
 
@@ -92,6 +102,7 @@ export default function FollowUpsPage() {
             disabled={pending}
             onComplete={(id) => complete.mutate(id)}
             onSnooze={(id) => snooze.mutate({ taskId: id, days: 1 })}
+            onDelete={(id) => remove.mutate(id)}
           />
         </section>
       ))}
@@ -104,11 +115,13 @@ function TaskList({
   disabled,
   onComplete,
   onSnooze,
+  onDelete,
 }: {
   tasks: TaskRow[];
   disabled: boolean;
   onComplete: (taskId: string) => void;
   onSnooze: (taskId: string) => void;
+  onDelete: (taskId: string) => void;
 }) {
   if (!tasks.length) return <p className="text-sm text-muted-foreground">None.</p>;
 
@@ -127,8 +140,19 @@ function TaskList({
               <p className="text-xs text-muted-foreground">
                 Due {safeDate(t.due_at)} · {t.status}
               </p>
-              {!done ? (
-                <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                  aria-label={`Delete ${t.title}`}
+                  disabled={disabled}
+                  onClick={() => onDelete(t.id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+                {!done ? (
+                  <>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -149,8 +173,9 @@ function TaskList({
                     <Check className="h-3.5 w-3.5" />
                     Complete
                   </Button>
-                </div>
-              ) : null}
+                  </>
+                ) : null}
+              </div>
             </CardContent>
           </Card>
         );

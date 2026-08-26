@@ -44,6 +44,10 @@ export interface CompanyRow {
   segment: CompanySegment | null;
   created_by: string | null;
   created_at: string;
+  /** Monotonic row version, returned as an ETag and sent back via If-Match. */
+  version: number;
+  /** Set when soft-deleted; such rows are hidden from every query. */
+  deleted_at?: string | null;
 }
 
 export interface ContactRow {
@@ -58,6 +62,10 @@ export interface ContactRow {
   source: LeadSource | null;
   is_primary: boolean;
   created_at: string;
+  /** Monotonic row version, returned as an ETag and sent back via If-Match. */
+  version: number;
+  /** Set when soft-deleted; such rows are hidden from every query. */
+  deleted_at?: string | null;
 }
 
 /**
@@ -81,6 +89,8 @@ export interface LeadRow {
   updated_at: string;
   /** Monotonic row version, returned as an ETag and sent back via If-Match. */
   version: number;
+  /** Set when soft-deleted; such rows are hidden from every query. */
+  deleted_at?: string | null;
 }
 
 /** A lead's pursuit, as embedded in lead responses. */
@@ -115,6 +125,8 @@ export interface LeadIntelligenceRow {
   comm_preference: string;
   updated_at: string;
   updated_by: string | null;
+  /** Monotonic row version, returned as an ETag and sent back via If-Match. */
+  version: number;
 }
 
 export type ActivityType =
@@ -178,6 +190,8 @@ export interface MeetingRow {
   outcome: MeetingOutcome | null;
   outcome_notes: string | null;
   created_at: string;
+  /** Monotonic row version, returned as an ETag and sent back via If-Match. */
+  version: number;
 }
 
 export type OpportunityStatus = "active" | "won" | "lost" | "on_hold";
@@ -206,6 +220,8 @@ export interface OpportunityRow {
   updated_at: string;
   /** Monotonic row version, returned as an ETag and sent back via If-Match. */
   version: number;
+  /** Set when soft-deleted; such rows are hidden from every query. */
+  deleted_at?: string | null;
 }
 
 /** Shape returned by `GET /opportunities/by-lead/{id}` — a light subset of {@link OpportunityRow}. */

@@ -11,6 +11,7 @@ import {
   Timer,
 } from "lucide-react";
 import { Button, cn } from "@dracara/ui";
+import { AddLeadDrawer } from "@/components/leads/add-lead-drawer";
 
 export type OpportunitiesViewMode = "list" | "kanban" | "timeline";
 
@@ -26,6 +27,8 @@ export function OpportunitiesToolbar({
   return (
     <div className="flex flex-col gap-3 border-b border-[#E5E7EB] pb-3 dark:border-border sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
       <div className="flex flex-wrap items-center gap-2">
+        {/* Work enters the pipeline as a lead; creating one opens its first pursuit. */}
+        <AddLeadDrawer />
         <Button
           type="button"
           size="sm"

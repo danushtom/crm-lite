@@ -5,12 +5,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiMutation } from "@/lib/use-api-mutation";
 import { useState } from "react";
 import { apiFetch, apiList } from "@/lib/api";
+import { AgentDrawer, type AgentSummary } from "@/components/agents/agent-drawer";
 
 export default function AgentsPage() {
   const qc = useQueryClient();
   const { data, error, isLoading } = useQuery({
     queryKey: ["agents"],
-    queryFn: () => apiList<Record<string, unknown>>("/agents"),
+    queryFn: () => apiList<AgentSummary>("/agents"),
     retry: false,
   });
 
@@ -28,7 +29,9 @@ export default function AgentsPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Agents</h1>
-        <p className="mt-1 text-muted-foreground">Admin-only roster and invites.</p>
+        <p className="mt-1 text-muted-foreground">
+          Admin-only roster. Invite people, change their role, or revoke access.
+        </p>
       </div>
 
       <Card>
@@ -55,14 +58,18 @@ export default function AgentsPage() {
                 <th className="px-3 py-2 text-left">Email</th>
                 <th className="px-3 py-2 text-left">Role</th>
                 <th className="px-3 py-2 text-left">Active</th>
+                <th className="px-3 py-2 text-right">Edit</th>
               </tr>
             </thead>
             <tbody>
               {(data ?? []).map((u) => (
-                <tr key={String(u.id)} className="border-t border-border/80">
-                  <td className="px-3 py-2">{String(u.email)}</td>
-                  <td className="px-3 py-2 capitalize">{String(u.role)}</td>
-                  <td className="px-3 py-2">{String(u.is_active)}</td>
+                <tr key={u.id} className="border-t border-border/80">
+                  <td className="px-3 py-2">{u.email}</td>
+                  <td className="px-3 py-2 capitalize">{u.role}</td>
+                  <td className="px-3 py-2">{u.is_active ? "Yes" : "Revoked"}</td>
+                  <td className="px-3 py-2 text-right">
+                    <AgentDrawer agent={u} />
+                  </td>
                 </tr>
               ))}
             </tbody>

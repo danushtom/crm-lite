@@ -4,6 +4,7 @@ import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@dracar
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { ProposalDrawer } from "@/components/opportunities/proposal-drawer";
 import { FileText, Plus, ExternalLink, Download } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -12,9 +13,13 @@ type Proposal = {
   version: number;
   title: string;
   status: string;
-  quoted_price: number;
+  quoted_price: number | null;
   created_at: string;
-  file_url?: string;
+  file_url?: string | null;
+  figma_url?: string | null;
+  github_url?: string | null;
+  loom_url?: string | null;
+  change_notes?: string | null;
 };
 
 export default function ProposalsPage() {
@@ -29,7 +34,7 @@ export default function ProposalsPage() {
 
   const proposals = opp.proposals || [];
 
-  const formatCurrency = (val: number) => {
+  const formatCurrency = (val: number | null) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: opp.currency || "USD",
@@ -44,10 +49,7 @@ export default function ProposalsPage() {
           <h2 className="text-2xl font-semibold tracking-tight">Proposals</h2>
           <p className="mt-1 text-sm text-muted-foreground">Version history and commercial documents sent to the client.</p>
         </div>
-        <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700">
-          <Plus className="h-4 w-4" />
-          Create New Proposal
-        </Button>
+        <ProposalDrawer opportunityId={id} />
       </div>
 
       <div className="grid gap-4">
@@ -74,14 +76,24 @@ export default function ProposalsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 border-t bg-muted/5 p-4 sm:border-l sm:border-t-0">
-                    <Button variant="ghost" size="sm" className="h-9 gap-1.5 text-xs">
-                      <Download className="h-3.5 w-3.5" />
-                      PDF
-                    </Button>
-                    <Button variant="ghost" size="sm" className="h-9 gap-1.5 text-xs">
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      View
-                    </Button>
+                    {p.file_url ? (
+                      <Button variant="ghost" size="sm" className="h-9 gap-1.5 text-xs" asChild>
+                        <a href={p.file_url} target="_blank" rel="noreferrer">
+                          <Download className="h-3.5 w-3.5" />
+                          Document
+                        </a>
+                      </Button>
+                    ) : null}
+                    <ProposalDrawer
+                      opportunityId={id}
+                      proposal={p}
+                      trigger={
+                        <Button variant="ghost" size="sm" className="h-9 gap-1.5 text-xs">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Open
+                        </Button>
+                      }
+                    />
                   </div>
                 </div>
               </CardContent>
@@ -92,10 +104,17 @@ export default function ProposalsPage() {
             <div className="rounded-full bg-muted/50 p-4 mb-4">
               <FileText className="h-8 w-8 text-muted-foreground/50" />
             </div>
-            <p className="text-sm text-muted-foreground">No proposals have been generated for this opportunity.</p>
-            <Button variant="outline" size="sm" className="mt-4">
-              Generate First Draft
-            </Button>
+            <p className="text-sm text-muted-foreground">No proposals for this opportunity yet.</p>
+            <div className="mt-4">
+              <ProposalDrawer
+                opportunityId={id}
+                trigger={
+                  <Button variant="outline" size="sm">
+                    Draft the first version
+                  </Button>
+                }
+              />
+            </div>
           </Card>
         )}
       </div>

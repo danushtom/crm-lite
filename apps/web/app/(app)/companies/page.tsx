@@ -2,6 +2,7 @@
 
 import type { CompanyRow, ContactRow, LeadWithOpportunities } from "@dracara/types";
 import { Badge, Button, Card, CardContent } from "@dracara/ui";
+import { CompanyDrawer } from "@/components/companies/company-drawer";
 import { useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
@@ -147,6 +148,7 @@ export default function CompaniesPage() {
     <div className="-mt-1 space-y-3">
       <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap items-center gap-2">
+          <CompanyDrawer />
           <Button className="h-8 gap-1.5 rounded-md bg-[#0B7FB3] px-3 text-xs font-semibold text-white hover:bg-[#0a6d99]">
             <Sparkles className="h-3.5 w-3.5" />
             Ask AI

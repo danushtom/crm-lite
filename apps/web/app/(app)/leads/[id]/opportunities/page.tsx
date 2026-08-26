@@ -5,20 +5,18 @@ import type { OpportunitySummaryRow } from "@dracara/types";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { apiFetchOptional } from "@/lib/api";
-import { ChevronRight, Layers } from "lucide-react";
+import { apiFetchOptional, apiList } from "@/lib/api";
+import { OpportunityDrawer } from "@/components/opportunities/opportunity-drawer";
+import { ChevronRight, Layers, Pencil, Plus } from "lucide-react";
 
 export default function LeadOpportunitiesPage() {
   const { id } = useParams<{ id: string }>();
 
-  const { data: opportunity = null, isLoading } = useQuery({
-    queryKey: ["opportunity-by-lead", id],
-    queryFn: () =>
-      apiFetchOptional<OpportunitySummaryRow>(`/opportunities/by-lead/${encodeURIComponent(id)}`),
+  // A lead may hold several pursuits over time -- the build, then the retainer.
+  const { data: oppRows = [], isLoading } = useQuery({
+    queryKey: ["lead-opportunities", id],
+    queryFn: () => apiList<OpportunitySummaryRow>(`/leads/${encodeURIComponent(id)}/opportunities`),
   });
-
-  // One opportunity per lead; kept as a list so the empty and populated states share markup.
-  const oppRows = opportunity ? [opportunity] : [];
 
   const humanizeUnderscore = (s: string) =>
     s
@@ -38,9 +36,22 @@ export default function LeadOpportunitiesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Opportunities</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Commercial deals and pipeline records for this lead.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Opportunities</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Every pursuit against this lead. Only one may be active at a time.
+          </p>
+        </div>
+        <OpportunityDrawer
+          leadId={id}
+          trigger={
+            <Button size="sm" className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              Open opportunity
+            </Button>
+          }
+        />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -68,7 +79,16 @@ export default function LeadOpportunitiesPage() {
                     <p className="mt-1 font-semibold text-lg">{String(opp.deal_probability)}%</p>
                   </div>
                 </div>
-                <div className="mt-6 flex justify-end">
+                <div className="mt-6 flex items-center justify-end gap-2">
+                  <OpportunityDrawer
+                    opportunity={opp as never}
+                    trigger={
+                      <Button size="sm" variant="ghost" className="gap-1.5">
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                    }
+                  />
                   <Button size="sm" variant="secondary" className="gap-1.5" asChild>
                     <Link href={`/opportunities/${String(opp.id)}`}>
                       Open Details
