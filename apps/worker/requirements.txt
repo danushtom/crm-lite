@@ -7,5 +7,9 @@ google-auth>=2.35.0
 google-auth-oauthlib>=1.2.0
 google-auth-httplib2>=0.2.0
 
+# Shared scoring model, installed from the workspace so the API and the worker
+# run the identical implementation rather than two copies that can drift.
+-e ../../packages/scoring
+
 # Testing
 pytest>=8.3.4

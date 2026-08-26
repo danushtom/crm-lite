@@ -12,6 +12,10 @@ slowapi>=0.1.9
 # so zoneinfo cannot resolve 'Asia/Kolkata' without this.
 tzdata>=2024.2
 
+# Shared scoring model, installed from the workspace so the API and the worker
+# run the identical implementation rather than two copies that can drift.
+-e ../../packages/scoring
+
 # Testing
 pytest>=8.3.4
 pytest-asyncio>=0.25.0
