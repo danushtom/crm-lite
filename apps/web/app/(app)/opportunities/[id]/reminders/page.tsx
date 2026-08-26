@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { apiFetch, apiList } from "@/lib/api";
+import { MeetingDrawer } from "@/components/meetings/meeting-drawer";
 import {
   addMonths,
   eachDayOfInterval,
@@ -67,10 +68,7 @@ export default function OpportunityRemindersPage() {
           <h2 className="text-2xl font-semibold tracking-tight">Reminders</h2>
           <p className="mt-1 text-sm text-muted-foreground">Deal-specific meetings and tasks.</p>
         </div>
-        <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700">
-          <Plus className="h-4 w-4" />
-          Schedule Meeting
-        </Button>
+        {leadId ? <MeetingDrawer leadId={leadId} /> : null}
       </div>
 
       <Card className={cardShell}>

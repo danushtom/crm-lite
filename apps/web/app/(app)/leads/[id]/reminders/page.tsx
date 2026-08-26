@@ -6,6 +6,7 @@ import { useApiMutation } from "@/lib/use-api-mutation";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { apiFetch, apiList } from "@/lib/api";
+import { MeetingDrawer } from "@/components/meetings/meeting-drawer";
 import {
   addMonths,
   eachDayOfInterval,
@@ -50,27 +51,7 @@ export default function RemindersPage() {
     queryFn: () => apiList<TaskRow>(`/leads/${id}/tasks`),
   });
 
-  const [title, setTitle] = useState("Discovery call");
-  const [scheduledAt, setScheduledAt] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
 
-  const createMeeting = useApiMutation({
-    errorTitle: "Could not schedule meeting",    mutationFn: () =>
-      apiFetch(`/leads/${id}/meetings`, {
-        method: "POST",
-        // scheduled_at is required by the API; the submit button guards against an empty
-        // value, so there is no null branch to take.
-        body: JSON.stringify({
-          title: title.trim(),
-          scheduled_at: new Date(scheduledAt).toISOString(),
-          duration_minutes: 30,
-        }),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["meetings", id] });
-      setShowAdd(false);
-    },
-  });
 
   const cardShell = "rounded-xl border border-border/70 bg-card shadow-[0_1px_3px_rgba(15,23,42,0.06)]";
 
@@ -81,32 +62,9 @@ export default function RemindersPage() {
           <h2 className="text-2xl font-semibold tracking-tight">Reminders</h2>
           <p className="mt-1 text-sm text-muted-foreground">Manage your schedule, tasks, and upcoming meetings.</p>
         </div>
-        <Button onClick={() => setShowAdd(!showAdd)} variant={showAdd ? "secondary" : "default"} size="sm" className="gap-2">
-          <Plus className="h-4 w-4" />
-          {showAdd ? "Cancel" : "New meeting"}
-        </Button>
+        <MeetingDrawer leadId={id} />
       </div>
 
-      {showAdd && (
-        <Card className={cardShell}>
-          <CardHeader>
-            <CardTitle className="text-base">Schedule new meeting</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground font-medium">Meeting Title</label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Requirements sync" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground font-medium">Date & Time</label>
-              <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
-            </div>
-            <Button disabled={!scheduledAt || !title.trim() || createMeeting.isPending} onClick={() => createMeeting.mutate()}>
-              Schedule
-            </Button>
-          </CardContent>
-        </Card>
-      )}
 
       <Card className={cn(cardShell, "overflow-hidden")}>
         <CardHeader className="flex flex-row items-center justify-between border-b border-border/60 bg-muted/5 py-3">

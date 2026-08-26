@@ -40,7 +40,7 @@ import {
 import { useMemo, useState, useEffect } from "react";
 import { apiFetch, apiListAll } from "@/lib/api";
 import Link from "next/link";
-import { AddContactDrawer } from "@/components/contacts/add-contact-drawer";
+import { ContactDrawer } from "@/components/contacts/contact-drawer";
 import { cn } from "@dracara/ui";
 import { leadStage } from "@/lib/leads";
 
@@ -278,7 +278,7 @@ export default function ContactsPage() {
               Gallery
             </button>
           </div>
-          <AddContactDrawer />
+          <ContactDrawer />
         </div>
       </div>
 

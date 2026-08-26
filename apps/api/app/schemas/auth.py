@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from app.schemas.common import APIModel, StrictAPIModel
+from app.schemas.common import APIModel, PatchModel, StrictAPIModel
 
 
 class GoogleOAuthExchange(StrictAPIModel):
@@ -31,3 +31,35 @@ class CurrentUser(APIModel):
     role: str
     avatar_url: str | None = None
     is_active: bool = True
+
+    calendar_connected: bool = Field(
+        default=False, description="True once Google Calendar tokens are stored for this user."
+    )
+    timezone: str = Field(
+        default="Asia/Kolkata",
+        description="IANA zone deciding when this user's follow-up queue rolls over.",
+    )
+
+
+class CurrentUserUpdate(PatchModel):
+    """What a user may change about themselves.
+
+    Deliberately excludes role and is_active: those are administrative, and letting someone
+    edit their own row would otherwise be a privilege-escalation path. The database enforces
+    the same rule independently.
+    """
+
+    full_name: str | None = Field(default=None, max_length=200)
+    avatar_url: str | None = Field(default=None, max_length=1000)
+    timezone: str | None = Field(
+        default=None,
+        max_length=64,
+        description="IANA zone, e.g. 'Asia/Kolkata'. Rejected if Postgres cannot resolve it.",
+    )
+
+
+class GoogleAuthorizeUrl(APIModel):
+    """Where to send the browser to begin the Calendar consent flow."""
+
+    authorize_url: str
+    state: str = Field(description="Echo this back on the callback to prove the flow is yours.")

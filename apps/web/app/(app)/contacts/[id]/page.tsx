@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { apiFetch, apiList, apiListAll } from "@/lib/api";
+import { ContactDrawer } from "@/components/contacts/contact-drawer";
 import { leadCurrency, leadScore, leadStage, leadValue } from "@/lib/leads";
 
 type ContactDetailTab = "overview" | "notes" | "conversations" | "timeline" | "reminders";
@@ -157,6 +158,7 @@ export default function ContactDetailsPage() {
     .toUpperCase();
 
   const companyInitial = (company?.name ?? "?").trim().slice(0, 1).toUpperCase();
+  const contactActions = contact ? <ContactDrawer contact={contact} /> : null;
 
   const locationParts = (company?.location || "").split(",");
   const city = locationParts[0]?.trim() || "-";
@@ -231,6 +233,7 @@ export default function ContactDetailsPage() {
               {primaryLead ? (
                 <div className="flex flex-col items-end gap-1 text-right">
                   <div className="flex flex-wrap items-center justify-end gap-2">
+                    {contactActions}
                     <Badge variant="outline" className="font-normal capitalize">
                       {humanizeUnderscore(leadStage(primaryLead) ?? "no pursuit")}
                     </Badge>
