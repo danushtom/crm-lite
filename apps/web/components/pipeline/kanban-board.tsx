@@ -43,7 +43,8 @@ function formatValueLine(currency: string, value: number | null): string {
 
 function cardSubtitle(opp: OpportunityWithLead): string {
   const lead = opp.leads;
-  const tag = (lead?.tags?.[0] ?? opp.tags?.[0]) as string | undefined;
+  // Tags categorise the prospect, so they live on the lead; pursuits no longer carry a copy.
+  const tag = lead?.tags?.[0] as string | undefined;
   if (tag && tag.length > 0) return tag;
   const pt = lead?.project_type ?? "other";
   return PROJECT_BLURB[pt] ?? String(pt).replace(/_/g, " ");

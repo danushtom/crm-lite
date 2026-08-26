@@ -1,6 +1,6 @@
 "use client";
 
-import type { ContactRow, LeadRow } from "@dracara/types";
+import type { ContactRow, LeadWithOpportunities } from "@dracara/types";
 import { 
   Badge, 
   Button, 
@@ -42,6 +42,7 @@ import { apiFetch, apiListAll } from "@/lib/api";
 import Link from "next/link";
 import { AddContactDrawer } from "@/components/contacts/add-contact-drawer";
 import { cn } from "@dracara/ui";
+import { leadStage } from "@/lib/leads";
 
 type CompanyStage = "Won" | "Leads" | "Lost" | "Discovery";
 
@@ -83,20 +84,21 @@ function toK(n: number): string {
 
 type ContactWithCompany = ContactRow & { companies?: { name?: string | null } | null };
 
-function contactPipelineStage(contact: ContactRow, leads: LeadRow[]): CompanyStage {
+function contactPipelineStage(contact: ContactRow, leads: LeadWithOpportunities[]): CompanyStage {
   for (const lead of leads) {
     if (lead.primary_contact_id === contact.id) {
-      return leadStageToCompanyStage(lead.stage);
+      return leadStageToCompanyStage(leadStage(lead) ?? undefined);
     }
   }
-  const leadsByCompany = new Map<string, LeadRow[]>();
+  const leadsByCompany = new Map<string, LeadWithOpportunities[]>();
   for (const lead of leads) {
     const arr = leadsByCompany.get(lead.company_id) ?? [];
     arr.push(lead);
     leadsByCompany.set(lead.company_id, arr);
   }
   const companyLeads = leadsByCompany.get(contact.company_id) ?? [];
-  return leadStageToCompanyStage(companyLeads[0]?.stage);
+  const first = companyLeads[0];
+  return leadStageToCompanyStage(first ? leadStage(first) ?? undefined : undefined);
 }
 
 export default function ContactsPage() {
@@ -130,7 +132,7 @@ export default function ContactsPage() {
 
   const { data: leads = [] } = useQuery({
     queryKey: ["leads", "contacts-page"],
-    queryFn: () => apiListAll<LeadRow>("/leads"),
+    queryFn: () => apiListAll<LeadWithOpportunities>("/leads"),
   });
 
   const filteredAndSortedRows = useMemo(() => {

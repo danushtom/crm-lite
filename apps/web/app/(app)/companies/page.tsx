@@ -1,6 +1,6 @@
 "use client";
 
-import type { CompanyRow, ContactRow, LeadRow } from "@dracara/types";
+import type { CompanyRow, ContactRow, LeadWithOpportunities } from "@dracara/types";
 import { Badge, Button, Card, CardContent } from "@dracara/ui";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { apiListAll } from "@/lib/api";
+import { leadStage, leadValue } from "@/lib/leads";
 
 type CompanyStage = "Won" | "Leads" | "Lost" | "Discovery";
 
@@ -67,7 +68,7 @@ export default function CompaniesPage() {
 
   const { data: leads = [], isLoading: leadsLoading, error: leadsError } = useQuery({
     queryKey: ["leads", "companies-page"],
-    queryFn: () => apiListAll<LeadRow>("/leads"),
+    queryFn: () => apiListAll<LeadWithOpportunities>("/leads"),
   });
 
   const { data: contacts = [], isLoading: contactsLoading, error: contactsError } = useQuery({
@@ -79,7 +80,7 @@ export default function CompaniesPage() {
   const error = (companiesError || leadsError || contactsError) as Error | null;
 
   const rows = useMemo(() => {
-    const leadsByCompany = new Map<string, LeadRow[]>();
+    const leadsByCompany = new Map<string, LeadWithOpportunities[]>();
     for (const lead of leads) {
       const arr = leadsByCompany.get(lead.company_id) ?? [];
       arr.push(lead);
@@ -98,9 +99,11 @@ export default function CompaniesPage() {
       const companyContacts = contactsByCompany.get(company.id) ?? [];
       const latestLead = companyLeads[0];
       const primary = companyContacts.find((c) => c.is_primary) ?? companyContacts[0];
-      const stage = leadStageToCompanyStage(latestLead?.stage);
+      const stage = leadStageToCompanyStage(
+        latestLead ? leadStage(latestLead) ?? undefined : undefined
+      );
       const value =
-        companyLeads.reduce((sum, lead) => sum + (lead.estimated_value ?? 0), 0) ||
+        companyLeads.reduce((sum, lead) => sum + (leadValue(lead) ?? 0), 0) ||
         Math.max(120, (company.name.length % 8) * 80 + 120);
 
       return {

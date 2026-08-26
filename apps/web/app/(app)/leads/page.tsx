@@ -1,6 +1,6 @@
 "use client";
 
-import type { CompanyRow, ContactRow, LeadRow } from "@dracara/types";
+import type { CompanyRow, ContactRow, LeadWithOpportunities } from "@dracara/types";
 import { Badge, Button, Card, CardContent } from "@dracara/ui";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -21,8 +21,11 @@ import {
 import { useMemo } from "react";
 import { apiListAll } from "@/lib/api";
 import { AddLeadDrawer } from "@/components/leads/add-lead-drawer";
+import { leadCurrency, leadScore, leadStage, leadValue } from "@/lib/leads";
 
-type LeadWithCo = LeadRow & { companies?: { name?: string; segment?: string | null } | null };
+type LeadWithCo = LeadWithOpportunities & {
+  companies?: { name?: string; segment?: string | null } | null;
+};
 
 const STAGE_VARIANTS: Record<string, string> = {
   prospect: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
@@ -81,7 +84,8 @@ export default function LeadsPage() {
       
       const projectTypeStr = lead.project_type.replace(/_/g, " ");
       const sourceStr = lead.lead_source.replace(/_/g, " ");
-      const stageStr = lead.stage.replace(/_/g, " ");
+      const stage = leadStage(lead);
+      const stageStr = (stage ?? "no pursuit").replace(/_/g, " ");
 
       return {
         id: lead.id,
@@ -89,11 +93,11 @@ export default function LeadsPage() {
         companyName,
         contactName: contact?.full_name ?? "No contact",
         stage: stageStr.charAt(0).toUpperCase() + stageStr.slice(1),
-        rawStage: lead.stage,
-        value: lead.estimated_value ?? 0,
-        currency: lead.currency ?? "USD",
+        rawStage: stage,
+        value: leadValue(lead),
+        currency: leadCurrency(lead),
         source: sourceStr.charAt(0).toUpperCase() + sourceStr.slice(1),
-        score: lead.priority_score ?? 0,
+        score: leadScore(lead),
         nextFollowup: lead.next_followup_date ? new Date(lead.next_followup_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : "Not set"
       };
     }).sort((a, b) => b.score - a.score);
@@ -287,7 +291,7 @@ export default function LeadsPage() {
                         </div>
                       </td>
                       <td className="py-2.5 pr-4">
-                        <Badge className={`font-medium ${STAGE_VARIANTS[lead.rawStage] || STAGE_VARIANTS.prospect}`}>
+                        <Badge className={`font-medium ${(lead.rawStage && STAGE_VARIANTS[lead.rawStage]) || STAGE_VARIANTS.prospect}`}>
                           {lead.stage}
                         </Badge>
                       </td>

@@ -60,29 +60,30 @@ def no_real_notifications(monkeypatch):
     return sent
 
 
-LEAD = {
-    "id": "lead-1",
-    "estimated_value": 500000,
+# Commercials live on the pursuit now, not on the lead.
+OPPORTUNITY = {
+    "id": "opp-1",
+    "lead_id": "lead-1",
+    "quoted_value": 500000,
     "currency": "INR",
     "deal_probability": 50,
     "stage": "prospect",
-    "next_followup_date": None,
     "score_override": None,
     "priority_score": 0,
 }
 
 
-def _score_for(lead):
+def _score_for(opp):
     from scoring import compute_priority_score
 
     return compute_priority_score(
-        estimated_value=float(lead["estimated_value"]),
-        currency=lead["currency"],
-        deal_probability=lead["deal_probability"],
-        stage=lead["stage"],
-        next_followup_date=lead["next_followup_date"],
+        estimated_value=float(opp["quoted_value"]),
+        currency=opp["currency"],
+        deal_probability=opp["deal_probability"],
+        stage=opp["stage"],
+        next_followup_date=None,
         intelligence=None,
-        score_override=None,
+        score_override=opp.get("score_override"),
     )
 
 
@@ -92,11 +93,11 @@ def _score_for(lead):
 def test_unchanged_score_is_not_rewritten(fake_sb):
     """Rewriting bumps updated_at, which puts the row back in the next run's window.
 
-    Unconditional writes made this job self-perpetuating: every lead it touched stayed in
+    Unconditional writes made this job self-perpetuating: every row it touched stayed in
     scope forever, degenerating into an hourly rewrite of the whole table.
     """
-    settled = {**LEAD, "priority_score": _score_for(LEAD)}
-    fake_sb.responses["GET /leads"] = [settled]
+    settled = {**OPPORTUNITY, "priority_score": _score_for(OPPORTUNITY)}
+    fake_sb.responses["GET /opportunities"] = [settled]
     fake_sb.responses["GET /lead_intelligence"] = []
 
     result = worker_app.score_recalculate()
@@ -105,50 +106,47 @@ def test_unchanged_score_is_not_rewritten(fake_sb):
     assert result == "scores:0"
 
 
-def test_changed_score_is_written_to_the_lead(fake_sb):
-    fake_sb.responses["GET /leads"] = [{**LEAD, "priority_score": 0}]
+def test_changed_score_is_written_to_the_opportunity(fake_sb):
+    """Scores derive from quoted value, probability and stage -- all opportunity columns."""
+    fake_sb.responses["GET /opportunities"] = [{**OPPORTUNITY, "priority_score": 0}]
     fake_sb.responses["GET /lead_intelligence"] = []
-    fake_sb.responses["GET /opportunities"] = []
 
     worker_app.score_recalculate()
 
-    lead_writes = fake_sb.writes("/leads")
-    assert len(lead_writes) == 1
-    assert lead_writes[0][2]["json_body"]["priority_score"] == _score_for(LEAD)
+    writes = fake_sb.writes("/opportunities")
+    assert len(writes) == 1
+    assert writes[0][2]["json_body"]["priority_score"] == _score_for(OPPORTUNITY)
 
 
-def test_score_is_mirrored_onto_the_opportunity(fake_sb):
-    """The Kanban reads opportunities.priority_score; updating only the lead left it stale."""
-    fake_sb.responses["GET /leads"] = [{**LEAD, "priority_score": 0}]
+def test_no_lead_rows_are_written(fake_sb):
+    """leads no longer carries priority_score; writing there would be a silent no-op."""
+    fake_sb.responses["GET /opportunities"] = [{**OPPORTUNITY, "priority_score": 0}]
     fake_sb.responses["GET /lead_intelligence"] = []
-    fake_sb.responses["GET /opportunities"] = [{"id": "opp-1", "priority_score": 0}]
 
     worker_app.score_recalculate()
 
-    opp_writes = fake_sb.writes("/opportunities")
-    assert len(opp_writes) == 1
-    assert opp_writes[0][2]["json_body"]["priority_score"] == _score_for(LEAD)
-
-
-def test_opportunity_write_is_skipped_when_already_correct(fake_sb):
-    score = _score_for(LEAD)
-    fake_sb.responses["GET /leads"] = [{**LEAD, "priority_score": 0}]
-    fake_sb.responses["GET /lead_intelligence"] = []
-    fake_sb.responses["GET /opportunities"] = [{"id": "opp-1", "priority_score": score}]
-
-    worker_app.score_recalculate()
-
-    assert fake_sb.writes("/opportunities") == []
+    assert fake_sb.writes("/leads") == []
 
 
 def test_score_override_is_respected(fake_sb):
-    fake_sb.responses["GET /leads"] = [{**LEAD, "score_override": 91, "priority_score": 0}]
+    fake_sb.responses["GET /opportunities"] = [
+        {**OPPORTUNITY, "score_override": 91, "priority_score": 0}
+    ]
     fake_sb.responses["GET /lead_intelligence"] = []
+
+    worker_app.score_recalculate()
+
+    assert fake_sb.writes("/opportunities")[0][2]["json_body"]["priority_score"] == 91
+
+
+def test_scan_is_bounded(fake_sb):
     fake_sb.responses["GET /opportunities"] = []
 
     worker_app.score_recalculate()
 
-    assert fake_sb.writes("/leads")[0][2]["json_body"]["priority_score"] == 91
+    params = fake_sb.params_for("GET", "/opportunities")
+    assert params["limit"] == "1000"
+    assert params["updated_at"].startswith("gte.")
 
 
 # --- no_touch_alert -----------------------------------------------------------

@@ -1,6 +1,6 @@
 "use client";
 
-import type { LeadRow, LeadStage } from "@dracara/types";
+import type { LeadStage, LeadWithOpportunities } from "@dracara/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@dracara/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
@@ -19,6 +19,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch, apiListAll } from "@/lib/api";
 import { DashboardCalendarWidget, type DashboardMeeting } from "@/components/dashboard/dashboard-calendar-widget";
+import { leadStage } from "@/lib/leads";
 
 type DashboardPayload = {
   pipeline_total: number;
@@ -31,7 +32,9 @@ type DashboardPayload = {
   win_loss_ratio_30d?: { wins: number; losses: number };
 };
 
-type LeadWithCo = LeadRow & { companies?: { name?: string; segment?: string | null } | null };
+type LeadWithCo = LeadWithOpportunities & {
+  companies?: { name?: string; segment?: string | null } | null;
+};
 
 const OPEN_STAGES: LeadStage[] = ["prospect", "contacting"];
 const MID_STAGES: LeadStage[] = [
@@ -78,10 +81,10 @@ export default function DashboardPage() {
   }, [dash]);
 
   const leadCounts = useMemo(() => {
-    const open = leads.filter((l) => OPEN_STAGES.includes(l.stage)).length;
-    const mid = leads.filter((l) => MID_STAGES.includes(l.stage)).length;
-    const won = leads.filter((l) => WON_STAGES.includes(l.stage)).length;
-    const lost = leads.filter((l) => LOST_STAGES.includes(l.stage)).length;
+    const open = leads.filter((l) => OPEN_STAGES.includes(leadStage(l) as LeadStage)).length;
+    const mid = leads.filter((l) => MID_STAGES.includes(leadStage(l) as LeadStage)).length;
+    const won = leads.filter((l) => WON_STAGES.includes(leadStage(l) as LeadStage)).length;
+    const lost = leads.filter((l) => LOST_STAGES.includes(leadStage(l) as LeadStage)).length;
     return { open, mid, won, lost };
   }, [leads]);
 

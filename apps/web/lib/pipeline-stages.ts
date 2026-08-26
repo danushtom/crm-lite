@@ -1,7 +1,7 @@
-import type { LeadRow } from "@dracara/types";
+import type { LeadStage } from "@dracara/types";
 
 /** Ordered Kanban columns — matches DB enum (tdd.md §10.2) */
-export const PIPELINE_STAGES: LeadRow["stage"][] = [
+export const PIPELINE_STAGES: LeadStage[] = [
   "prospect",
   "contacting",
   "discovery_scheduled",

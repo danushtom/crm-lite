@@ -20,11 +20,12 @@ from app.schemas.opportunities import (
     Proposal,
     ProposalCreate,
 )
+from app.services import leads as lead_service
 from app.services import proposals as proposal_service
 
 router = APIRouter(prefix="/opportunities", tags=["Opportunities"])
 
-_SUMMARY_COLUMNS = "id,lead_id,title,status,stage,quoted_value,currency,deal_probability,priority_score,updated_at"
+_SUMMARY_COLUMNS = "id,lead_id,title,status,stage,quoted_value,currency,deal_probability,priority_score,updated_at,version"
 
 
 @router.get(
@@ -64,15 +65,22 @@ async def list_opportunities(
     response_model=OpportunitySummary,
     summary="Get the opportunity for a lead",
     description=(
-        "Light projection for lead -> opportunity deep links. Replaces the previous "
-        "`GET /opportunities?lead_id=` filter, which returned a list for a one-to-one relation."
+        "The lead's currently active pursuit, as a light projection for deep links. Use "
+        "`GET /leads/{lead_id}/opportunities` for the full history."
     ),
     responses=ERROR_RESPONSES,
 )
 async def get_opportunity_by_lead(lead_id: str, db: DbDep) -> OpportunitySummary:
+    """The lead's active pursuit. A lead may have several over time; at most one is active."""
     result = await db.select(
         "opportunities",
-        params={"select": _SUMMARY_COLUMNS, "lead_id": f"eq.{lead_id}", "limit": "1"},
+        params={
+            "select": _SUMMARY_COLUMNS,
+            "lead_id": f"eq.{lead_id}",
+            "status": "eq.active",
+            "order": "created_at.desc,id.desc",
+            "limit": "1",
+        },
     )
     return OpportunitySummary.model_validate(result.one("Opportunity"))
 
@@ -129,6 +137,11 @@ async def update_opportunity(
         if_match=if_match,
         what="Opportunity",
     )
+
+    # Value, probability and stage all feed the priority score, so recompute when they move.
+    if {"quoted_value", "currency", "deal_probability", "stage", "score_override"} & set(changes):
+        row = await lead_service.sync_opportunity_score(db, row)
+
     set_etag(response, row)
     return Opportunity.model_validate(row)
 

@@ -122,59 +122,52 @@ def no_touch_alert() -> str:
 
 @app.task(name="worker_app.score_recalculate")
 def score_recalculate() -> str:
+    """Recompute priority scores for recently-touched pursuits.
+
+    Scores are a property of the opportunity: they derive from quoted value, probability and
+    stage, all of which live there since leads and opportunities were separated. This job
+    used to read those columns off leads, where they were mirrored copies.
+    """
     sb = _sb()
     since = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     rows = sb.request(
         "GET",
-        "/leads",
-        params={"select": "*", "updated_at": f"gte.{since}"},
+        "/opportunities",
+        params={"select": "*", "updated_at": f"gte.{since}", "limit": "1000"},
     )
-    leads = rows or []
+    opportunities = rows or []
     updated = 0
-    for lead in leads:
-        lid = str(lead["id"])
-        intel_rows = sb.request("GET", "/lead_intelligence", params={"select": "*", "lead_id": f"eq.{lid}"})
+    for opp in opportunities:
+        oid = str(opp["id"])
+        lead_id = str(opp["lead_id"])
+        intel_rows = sb.request(
+            "GET", "/lead_intelligence", params={"select": "*", "lead_id": f"eq.{lead_id}"}
+        )
         intel = intel_rows[0] if intel_rows else None
-        ov = lead.get("score_override")
+        ov = opp.get("score_override")
         score = compute_priority_score(
-            estimated_value=float(lead["estimated_value"]) if lead.get("estimated_value") is not None else None,
-            currency=str(lead.get("currency") or "INR"),
-            deal_probability=int(lead.get("deal_probability") or 50),
-            stage=str(lead.get("stage")),
-            next_followup_date=lead.get("next_followup_date"),
+            estimated_value=float(opp["quoted_value"]) if opp.get("quoted_value") is not None else None,
+            currency=str(opp.get("currency") or "INR"),
+            deal_probability=int(opp.get("deal_probability") or 50),
+            stage=str(opp.get("stage")),
+            next_followup_date=None,
             intelligence=intel,
             score_override=int(ov) if ov is not None else None,
         )
 
-        # Writing unconditionally was self-perpetuating: the PATCH fires leads_touch, which
-        # bumps updated_at, so the row falls inside the next run's "updated in the last hour"
-        # window. Every lead touched once stayed in scope forever and the job degenerated into
-        # rewriting the whole table hourly.
-        if int(lead.get("priority_score") or 0) == score:
+        # Writing unconditionally was self-perpetuating: the PATCH bumps updated_at, putting
+        # the row back inside the next run's "changed in the last hour" window. Every row it
+        # touched stayed in scope forever and the job degenerated into an hourly full rewrite.
+        if int(opp.get("priority_score") or 0) == score:
             continue
 
         sb.request(
             "PATCH",
-            "/leads",
-            params={"id": f"eq.{lid}"},
+            "/opportunities",
+            params={"id": f"eq.{oid}"},
             json_body={"priority_score": score},
             prefer="return=minimal",
         )
-
-        # The Kanban reads opportunities.priority_score. Updating only the lead left the
-        # board showing a stale score until something else happened to touch the opportunity.
-        opp_rows = sb.request(
-            "GET", "/opportunities", params={"select": "id,priority_score", "lead_id": f"eq.{lid}"}
-        )
-        opp = opp_rows[0] if opp_rows else None
-        if opp is not None and int(opp.get("priority_score") or 0) != score:
-            sb.request(
-                "PATCH",
-                "/opportunities",
-                params={"id": f"eq.{opp['id']}"},
-                json_body={"priority_score": score},
-                prefer="return=minimal",
-            )
         updated += 1
     return f"scores:{updated}"
 

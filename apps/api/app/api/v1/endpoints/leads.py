@@ -1,4 +1,9 @@
-"""Lead endpoints, including the activity / task / meeting sub-resources."""
+"""Lead endpoints, including the activity / task / meeting sub-resources.
+
+Pipeline position lives on a lead's opportunities, so stage filtering here joins through to
+them rather than reading a mirrored column. Moving a card between stages is a write to the
+opportunity (``PATCH /opportunities/{id}``), not to the lead.
+"""
 
 from __future__ import annotations
 
@@ -19,16 +24,18 @@ from app.schemas.leads import (
     LeadDetail,
     LeadIntelligence,
     LeadIntelligenceUpdate,
-    LeadStageUpdate,
+    LeadOpportunity,
     LeadUpdate,
     LeadWithCompany,
 )
 from app.schemas.meetings import Meeting, MeetingCreate
-from app.schemas.opportunities import LeadConversion, LeadRef, Opportunity
+from app.schemas.opportunities import Opportunity, OpportunityOpen
 from app.schemas.tasks import Task, TaskCreate
 from app.services import leads as lead_service
 
 router = APIRouter(prefix="/leads", tags=["Leads"])
+
+_EMBED = f"*,companies(*),opportunities({lead_service.OPPORTUNITY_COLUMNS})"
 
 
 def _search_pattern(term: str) -> str:
@@ -41,29 +48,32 @@ def _search_pattern(term: str) -> str:
     "",
     response_model=Page[LeadWithCompany],
     summary="List leads",
-    description="Filterable, paginated lead list with the company embedded.",
+    description=(
+        "Filterable, paginated lead list with the company and every pursuit embedded. "
+        "Filtering by stage joins through to the opportunities, since a lead has no stage "
+        "of its own."
+    ),
     responses=AUTH_RESPONSES,
 )
 async def list_leads(
     db: DbDep,
     page: PageParamsDep,
-    stage: Annotated[LeadStage | None, Query(description="Exact pipeline stage.")] = None,
+    stage: Annotated[
+        LeadStage | None, Query(description="Match leads with a pursuit at this stage.")
+    ] = None,
     owner_id: Annotated[str | None, Query(description="Restrict to one owner.")] = None,
     lead_source: Annotated[LeadSource | None, Query()] = None,
     project_type: Annotated[ProjectType | None, Query()] = None,
     search: Annotated[
-        str | None,
-        Query(max_length=200, description="Case-insensitive match on the company name."),
+        str | None, Query(max_length=200, description="Case-insensitive match on the company name.")
     ] = None,
 ) -> Page[LeadWithCompany]:
     params: dict[str, str] = {
-        "select": "*,companies(*)",
+        "select": _EMBED,
         "order": "updated_at.desc,id.desc",
         "limit": str(page.limit),
         "offset": str(page.offset),
     }
-    if stage:
-        params["stage"] = f"eq.{stage.value}"
     if owner_id:
         params["owner_id"] = f"eq.{owner_id}"
     if lead_source:
@@ -71,19 +81,15 @@ async def list_leads(
     if project_type:
         params["project_type"] = f"eq.{project_type.value}"
 
+    if stage:
+        # !inner turns the embed into a join, so the filter restricts the leads returned.
+        params["select"] = _EMBED.replace("opportunities(", "opportunities!inner(")
+        params["opportunities.stage"] = f"eq.{stage.value}"
+
     if search:
         pattern = _search_pattern(search)
         if pattern:
-            # Filter on the embedded company with an inner join, so the match happens in one
-            # query against the trigram index on companies.name.
-            #
-            # This previously ran a separate lookup capped at 100 company ids and fed them
-            # into an `in.(...)` list: past 100 matching companies their leads silently
-            # vanished from the results, and the exact set depended on PostgREST's row order.
-            # It also matched `search` against project_type and lead_source, which are enums
-            # with a handful of values -- substring matching them is close to meaningless, and
-            # both already have dedicated exact filters on this endpoint.
-            params["select"] = "*,companies!inner(*)"
+            params["select"] = params["select"].replace("companies(", "companies!inner(")
             params["companies.name"] = f"ilike.{pattern}"
 
     result = await db.select("leads", params=params, count=True)
@@ -92,30 +98,38 @@ async def list_leads(
 
 @router.post(
     "",
-    response_model=Lead,
+    response_model=LeadDetail,
     status_code=status.HTTP_201_CREATED,
     summary="Create a lead",
     description=(
-        "Creates the lead plus, via database triggers, its intelligence panel and the "
-        "opportunity row that carries its pipeline position."
+        "Creates the lead, its CRM intelligence panel and its initial pursuit in one call. "
+        "Supply `opportunity` to set the pursuit's commercials; defaults are used otherwise."
     ),
     responses=ERROR_RESPONSES,
 )
 async def create_lead(
     body: LeadCreate, db: DbDep, user: CurrentUserDep, response: Response
-) -> Lead:
-    payload = body.model_dump(exclude_none=True, mode="json")
-    created = await lead_service.create_lead(db, payload, owner_id=user.sub)
-    lead = Lead.model_validate(created)
-    response.headers["Location"] = f"{router.prefix}/{lead.id}"
-    return lead
+) -> LeadDetail:
+    payload = body.model_dump(exclude_none=True, mode="json", exclude={"opportunity"})
+    initial = body.opportunity.model_dump(mode="json") if body.opportunity else None
+
+    lead, pursuits = await lead_service.create_lead(
+        db, payload, owner_id=user.sub, opportunity=initial
+    )
+
+    response.headers["Location"] = f"{router.prefix}/{lead['id']}"
+    set_etag(response, lead)
+    return LeadDetail(
+        lead=Lead.model_validate(lead),
+        opportunities=[LeadOpportunity.model_validate(o) for o in pursuits],
+    )
 
 
 @router.get(
     "/{lead_id}",
     response_model=LeadDetail,
     summary="Get a lead",
-    description="Returns the lead with its intelligence panel; optionally embeds recent activity.",
+    description="The lead with its intelligence panel and pursuits; optionally recent activity.",
     responses=ERROR_RESPONSES,
 )
 async def get_lead(
@@ -128,11 +142,14 @@ async def get_lead(
 ) -> LeadDetail:
     lead = await lead_service.get_lead(db, lead_id)
     set_etag(response, lead)
+
     intelligence = await lead_service.get_lead_intelligence(db, lead_id)
+    pursuits = await lead_service.list_opportunities_for_lead(db, lead_id)
 
     detail = LeadDetail(
         lead=Lead.model_validate(lead),
         lead_intelligence=LeadIntelligence.model_validate(intelligence) if intelligence else None,
+        opportunities=[LeadOpportunity.model_validate(o) for o in pursuits],
     )
     if include_related:
         activities = await db.select(
@@ -146,7 +163,12 @@ async def get_lead(
         )
         tasks = await db.select(
             "tasks",
-            params={"select": "*", "lead_id": f"eq.{lead_id}", "order": "due_at.asc,id.desc", "limit": "25"},
+            params={
+                "select": "*",
+                "lead_id": f"eq.{lead_id}",
+                "order": "due_at.asc,id.desc",
+                "limit": "25",
+            },
         )
         detail.activities = [Activity.model_validate(a) for a in activities.rows]
         detail.recent_tasks = tasks.rows
@@ -158,8 +180,8 @@ async def get_lead(
     response_model=Lead,
     summary="Update a lead",
     description=(
-        "Pipeline fields (stage, value, currency, probability, tags) are written to the lead's "
-        "opportunity row and mirrored back by a trigger. The priority score is recomputed."
+        "Updates qualification fields. Stage, value and probability belong to the lead's "
+        "opportunities -- change those through `PATCH /opportunities/{id}`."
     ),
     responses=ERROR_RESPONSES,
 )
@@ -176,16 +198,51 @@ async def update_lead(
     return Lead.model_validate(updated)
 
 
-@router.patch(
-    "/{lead_id}/stage",
-    response_model=Lead,
-    summary="Move a lead to another stage",
-    description="Writes to the opportunity row, which logs a stage-change activity via trigger.",
+# --- Opportunities -------------------------------------------------------------
+
+
+@router.get(
+    "/{lead_id}/opportunities",
+    response_model=Page[LeadOpportunity],
+    summary="List a lead's pursuits",
     responses=ERROR_RESPONSES,
 )
-async def move_stage(lead_id: str, body: LeadStageUpdate, db: DbDep) -> Lead:
-    updated = await lead_service.set_stage(db, lead_id, body.stage.value)
-    return Lead.model_validate(updated)
+async def list_lead_opportunities(
+    lead_id: str, db: DbDep, page: PageParamsDep
+) -> Page[LeadOpportunity]:
+    await lead_service.get_lead(db, lead_id)
+    rows = await lead_service.list_opportunities_for_lead(db, lead_id)
+    return Page.build([LeadOpportunity.model_validate(o) for o in rows], page, len(rows))
+
+
+@router.post(
+    "/{lead_id}/opportunities",
+    response_model=Opportunity,
+    status_code=status.HTTP_201_CREATED,
+    summary="Open another pursuit against this lead",
+    description=(
+        "For the follow-on engagement -- the retainer after the build. Replaces the former "
+        "`POST /leads/{id}/convert`, which mutated a row that already existed and set a "
+        "boolean, rather than creating anything. At most one pursuit per lead may be active."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def open_opportunity(
+    lead_id: str,
+    body: OpportunityOpen,
+    db: DbDep,
+    user: CurrentUserDep,
+    response: Response,
+) -> Opportunity:
+    created = await lead_service.open_opportunity(
+        db, lead_id, body.model_dump(exclude_none=True, mode="json"), owner_id=user.sub
+    )
+    response.headers["Location"] = f"/opportunities/{created['id']}"
+    set_etag(response, created)
+    return Opportunity.model_validate(created)
+
+
+# --- Intelligence --------------------------------------------------------------
 
 
 @router.get(
@@ -194,9 +251,11 @@ async def move_stage(lead_id: str, body: LeadStageUpdate, db: DbDep) -> Lead:
     summary="Get the CRM intelligence panel",
     responses=ERROR_RESPONSES,
 )
-async def get_intelligence(lead_id: str, db: DbDep) -> LeadIntelligence:
+async def get_intelligence(lead_id: str, db: DbDep, response: Response) -> LeadIntelligence:
     await lead_service.get_lead(db, lead_id)
     intelligence = await lead_service.get_lead_intelligence(db, lead_id)
+    if intelligence:
+        set_etag(response, intelligence)
     return LeadIntelligence.model_validate(intelligence or {"lead_id": lead_id})
 
 
@@ -204,41 +263,38 @@ async def get_intelligence(lead_id: str, db: DbDep) -> LeadIntelligence:
     "/{lead_id}/intelligence",
     response_model=LeadIntelligence,
     summary="Update the CRM intelligence panel",
-    description="Partners may read this panel but not edit it.",
+    description=(
+        "Partners may read this panel but not edit it. Decision-maker seniority feeds the "
+        "priority score, so the active pursuit is rescored afterwards."
+    ),
     responses=ERROR_RESPONSES,
 )
 async def update_intelligence(
     lead_id: str,
     body: LeadIntelligenceUpdate,
     db: DbDep,
+    response: Response,
     user: CurrentUserDep,
     _guard: NonPartnerDep,
 ) -> LeadIntelligence:
     changes = body.changes()
     if not changes:
-        return await get_intelligence(lead_id, db)
+        return await get_intelligence(lead_id, db, response)
 
     changes["updated_by"] = user.sub
     result = await db.update("lead_intelligence", {"lead_id": f"eq.{lead_id}"}, changes)
     updated = result.one("Lead intelligence")
-    await lead_service.sync_priority_score(db, lead_id)
-    return LeadIntelligence.model_validate(updated)
+    set_etag(response, updated)
 
-
-@router.post(
-    "/{lead_id}/convert",
-    response_model=LeadConversion,
-    status_code=status.HTTP_201_CREATED,
-    summary="Convert a lead into an opportunity",
-    description="Idempotency is enforced: converting an already-converted lead returns 409.",
-    responses=ERROR_RESPONSES,
-)
-async def convert_lead(lead_id: str, db: DbDep) -> LeadConversion:
-    opportunity, lead = await lead_service.convert_to_opportunity(db, lead_id)
-    return LeadConversion(
-        opportunity=Opportunity.model_validate(opportunity),
-        lead=LeadRef.model_validate(lead),
+    pursuits = await db.select(
+        "opportunities",
+        params={"select": "*", "lead_id": f"eq.{lead_id}", "status": "eq.active", "limit": "1"},
     )
+    active = pursuits.first()
+    if active is not None:
+        await lead_service.sync_opportunity_score(db, active, intelligence=updated)
+
+    return LeadIntelligence.model_validate(updated)
 
 
 # --- Activities ----------------------------------------------------------------
@@ -281,6 +337,7 @@ async def create_activity(
         **body.model_dump(exclude_none=True, mode="json"),
         "lead_id": lead_id,
         "performed_by": user.sub,
+        "actor_type": "user",
     }
     result = await db.insert("activities", payload)
     return Activity.model_validate(result.one("Activity"))
@@ -318,9 +375,7 @@ async def list_lead_tasks(lead_id: str, db: DbDep, page: PageParamsDep) -> Page[
     summary="Create a follow-up task on a lead",
     responses=ERROR_RESPONSES,
 )
-async def create_lead_task(
-    lead_id: str, body: TaskCreate, db: DbDep, user: CurrentUserDep
-) -> Task:
+async def create_lead_task(lead_id: str, body: TaskCreate, db: DbDep, user: CurrentUserDep) -> Task:
     await lead_service.get_lead(db, lead_id)
     payload = {
         **body.model_dump(exclude_none=True, mode="json"),

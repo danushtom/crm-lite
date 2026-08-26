@@ -16,7 +16,7 @@ import {
 } from "date-fns";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { scoreTier, type CompanyRow, type ContactRow, type LeadRow, type TaskRow, type MeetingRow } from "@dracara/types";
+import { scoreTier, type CompanyRow, type ContactRow, type LeadWithOpportunities, type TaskRow, type MeetingRow } from "@dracara/types";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn } from "@dracara/ui";
 import {
   ArrowRight,
@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { apiFetch, apiList, apiListAll } from "@/lib/api";
+import { leadCurrency, leadScore, leadStage, leadValue } from "@/lib/leads";
 
 type ContactDetailTab = "overview" | "notes" | "conversations" | "timeline" | "reminders";
 
@@ -99,7 +100,7 @@ export default function ContactDetailsPage() {
 
   const { data: leads = [] } = useQuery({
     queryKey: ["leads", "contact-details"],
-    queryFn: () => apiListAll<LeadRow>("/leads"),
+    queryFn: () => apiListAll<LeadWithOpportunities>("/leads"),
   });
 
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -128,10 +129,13 @@ export default function ContactDetailsPage() {
   });
 
   const pipelineTotal = useMemo(() => {
-    return contactLeads.reduce((sum, l) => sum + (l.estimated_value != null ? Number(l.estimated_value) : 0), 0);
+    return contactLeads.reduce((sum, l) => sum + leadValue(l), 0);
   }, [contactLeads]);
 
-  const opportunityCount = useMemo(() => contactLeads.filter((l) => l.is_opportunity).length, [contactLeads]);
+  const opportunityCount = useMemo(
+    () => contactLeads.reduce((n, l) => n + (l.opportunities?.length ?? 0), 0),
+    [contactLeads]
+  );
 
   if (isLoading) {
     return <div className="p-8 text-center text-muted-foreground">Loading contact details...</div>;
@@ -170,7 +174,7 @@ export default function ContactDetailsPage() {
   const showReview = activeTab === "notes";
   const showConversationsOnly = activeTab === "conversations";
 
-  const tier = primaryLead ? scoreTier(primaryLead.priority_score) : null;
+  const tier = primaryLead ? scoreTier(leadScore(primaryLead)) : null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 pb-12 pt-2">
@@ -228,7 +232,7 @@ export default function ContactDetailsPage() {
                 <div className="flex flex-col items-end gap-1 text-right">
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <Badge variant="outline" className="font-normal capitalize">
-                      {humanizeUnderscore(primaryLead.stage)}
+                      {humanizeUnderscore(leadStage(primaryLead) ?? "no pursuit")}
                     </Badge>
                     <Badge
                       className={cn(
@@ -238,7 +242,7 @@ export default function ContactDetailsPage() {
                         tier === "Cold" && "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200",
                       )}
                     >
-                      {tier} · {primaryLead.priority_score}
+                      {tier} · {leadScore(primaryLead)}
                     </Badge>
                   </div>
                 </div>
@@ -389,7 +393,9 @@ export default function ContactDetailsPage() {
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <p className="mt-2 text-2xl font-semibold tabular-nums text-[#0A1128] dark:text-foreground">
-                    {contactLeads.length ? formatMoney(pipelineTotal, primaryLead?.currency) : "—"}
+                    {contactLeads.length
+                      ? formatMoney(pipelineTotal, primaryLead ? leadCurrency(primaryLead) : undefined)
+                      : "—"}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">Sum of related deal values</p>
                 </CardContent>
@@ -578,11 +584,11 @@ export default function ContactDetailsPage() {
                                   {humanizeUnderscore(lead.project_type)}
                                 </span>
                                 <Badge variant="outline" className="shrink-0 text-[10px] capitalize">
-                                  {humanizeUnderscore(lead.stage)}
+                                  {humanizeUnderscore(leadStage(lead) ?? "no pursuit")}
                                 </Badge>
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                {formatMoney(lead.estimated_value, lead.currency)} · {scoreTier(lead.priority_score)}{" "}
+                                {formatMoney(leadValue(lead), leadCurrency(lead))} · {scoreTier(leadScore(lead))}{" "}
                                 · {humanizeUnderscore(lead.lead_source)}
                               </p>
                               {lead.primary_contact_id === id ? (
@@ -656,7 +662,7 @@ export default function ContactDetailsPage() {
                           Lead
                         </div>
                         <p className="mt-2 text-sm font-medium text-foreground capitalize">
-                          {humanizeUnderscore(contactLeads[0].stage)}
+                          {humanizeUnderscore(leadStage(contactLeads[0]) ?? "no pursuit")}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {humanizeUnderscore(contactLeads[0].project_type)} ·{" "}
@@ -807,7 +813,8 @@ export default function ContactDetailsPage() {
                             <div className="mt-2 border-l-2 border-orange-200 pl-3 text-xs text-muted-foreground">
                               <span className="font-semibold text-foreground">source</span> {lead.lead_source}
                               <br />
-                              <span className="font-semibold text-foreground">stage</span> {lead.stage}
+                              <span className="font-semibold text-foreground">stage</span>{" "}
+                              {leadStage(lead) ?? "no pursuit"}
                             </div>
                             <div className="mt-3 flex items-center gap-1.5">
                               <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-600">

@@ -5,19 +5,29 @@ from __future__ import annotations
 from app.core.config import API_V1_PREFIX as V1
 from tests.conftest import FakeResult
 
+# A lead is a qualification record; stage and commercials live on its opportunities.
 LEAD = {
     "id": "lead-1",
     "company_id": "co-1",
     "owner_id": "11111111-2222-3333-4444-555555555555",
-    "stage": "prospect",
     "project_type": "saas",
     "lead_source": "referral",
-    "estimated_value": 250000,
+    "tags": ["inbound"],
+    "version": 1,
+}
+
+OPPORTUNITY = {
+    "id": "opp-1",
+    "lead_id": "lead-1",
+    "owner_id": "11111111-2222-3333-4444-555555555555",
+    "title": "Saas",
+    "stage": "prospect",
+    "status": "active",
+    "quoted_value": 250000,
     "currency": "INR",
     "deal_probability": 50,
     "priority_score": 42,
-    "tags": ["inbound"],
-    "is_opportunity": False,
+    "version": 1,
 }
 
 TASK = {
@@ -60,20 +70,26 @@ def test_limit_and_offset_reach_the_query(authed_client, fake_db):
 
 def test_money_is_serialised_as_a_json_number(authed_client, fake_db):
     """Pydantic renders Decimal as a string by default, which breaks number-typed clients."""
-    fake_db.responses["GET leads"] = FakeResult([LEAD], count=1)
-    raw = authed_client.get(f"{V1}/leads").text
-    assert '"estimated_value":"' not in raw
-    value = authed_client.get(f"{V1}/leads").json()["items"][0]["estimated_value"]
+    fake_db.responses["GET opportunities"] = FakeResult([OPPORTUNITY], count=1)
+    raw = authed_client.get(f"{V1}/opportunities").text
+    assert '"quoted_value":"' not in raw
+    value = authed_client.get(f"{V1}/opportunities").json()["items"][0]["quoted_value"]
     assert isinstance(value, (int, float))
 
 
 # --- Filters ------------------------------------------------------------------
 
 
-def test_stage_filter_is_passed_through(authed_client, fake_db):
+def test_stage_filter_joins_through_to_opportunities(authed_client, fake_db):
+    """A lead has no stage of its own, so filtering by one is a join, not a column match."""
     fake_db.responses["GET leads"] = FakeResult([], count=0)
+
     authed_client.get(f"{V1}/leads", params={"stage": "negotiation"})
-    assert fake_db.calls[-1][2]["params"]["stage"] == "eq.negotiation"
+
+    params = fake_db.calls[-1][2]["params"]
+    assert params["opportunities.stage"] == "eq.negotiation"
+    assert "opportunities!inner(" in params["select"], "must be an inner join to filter leads"
+    assert "stage" not in params, "leads carry no stage column"
 
 
 def test_search_strips_postgrest_wildcards(authed_client, fake_db):
@@ -92,6 +108,7 @@ def test_search_strips_postgrest_wildcards(authed_client, fake_db):
 
 def test_create_lead_returns_201_with_location(authed_client, fake_db):
     fake_db.responses["POST leads"] = FakeResult(LEAD)
+    fake_db.responses["GET opportunities"] = FakeResult([OPPORTUNITY])
 
     response = authed_client.post(
         f"{V1}/leads",
@@ -100,17 +117,42 @@ def test_create_lead_returns_201_with_location(authed_client, fake_db):
 
     assert response.status_code == 201
     assert response.headers["location"] == "/leads/lead-1"
+    body = response.json()
+    assert body["lead"]["id"] == "lead-1"
+    assert body["opportunities"][0]["stage"] == "prospect", "creation opens the first pursuit"
 
 
 def test_create_lead_defaults_owner_to_the_caller(authed_client, fake_db, test_user):
     fake_db.responses["POST leads"] = FakeResult(LEAD)
+    fake_db.responses["GET opportunities"] = FakeResult([OPPORTUNITY])
+
     authed_client.post(
         f"{V1}/leads",
         json={"company_id": "co-1", "project_type": "saas", "lead_source": "referral"},
     )
+
     payload = [c for c in fake_db.calls if c[0] == "POST"][0][2]["payload"]
     assert payload["owner_id"] == test_user.sub
-    assert "priority_score" in payload, "score must be computed server-side, not trusted from input"
+
+
+def test_create_lead_derives_the_score_server_side(authed_client, fake_db):
+    """Accepting priority_score from the client would let callers fake their own ranking."""
+    fake_db.responses["POST leads"] = FakeResult(LEAD)
+    fake_db.responses["GET opportunities"] = FakeResult([OPPORTUNITY])
+    fake_db.responses["PATCH opportunities"] = FakeResult(OPPORTUNITY)
+
+    authed_client.post(
+        f"{V1}/leads",
+        json={
+            "company_id": "co-1",
+            "project_type": "saas",
+            "lead_source": "referral",
+            "opportunity": {"quoted_value": 900000, "deal_probability": 80},
+        },
+    )
+
+    body = [c for c in fake_db.calls if c[0] == "PATCH" and c[1] == "opportunities"][0][2]["payload"]
+    assert "priority_score" in body
 
 
 def test_create_lead_rejects_an_invalid_enum(authed_client):
@@ -129,7 +171,7 @@ def test_create_lead_rejects_out_of_range_probability(authed_client):
             "company_id": "co-1",
             "project_type": "saas",
             "lead_source": "referral",
-            "deal_probability": 150,
+            "opportunity": {"deal_probability": 150},
         },
     )
     assert response.status_code == 422
@@ -143,7 +185,7 @@ def test_client_cannot_set_priority_score_directly(authed_client):
             "company_id": "co-1",
             "project_type": "saas",
             "lead_source": "referral",
-            "priority_score": 100,
+            "opportunity": {"priority_score": 100},
         },
     )
     assert response.status_code == 422
@@ -350,6 +392,5 @@ def test_lead_search_is_a_single_joined_query(authed_client, fake_db):
     assert len(queries) == 1, f"search should not need a second lookup: {queries}"
 
     params = queries[0][2]["params"]
-    assert params["select"] == "*,companies!inner(*)"
+    assert "companies!inner(" in params["select"]
     assert params["companies.name"] == "ilike.*acme*"
-    assert "limit" not in str(params.get("companies.name", ""))

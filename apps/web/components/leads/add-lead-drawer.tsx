@@ -1,6 +1,9 @@
 "use client";
 
 import type { CompanyRow, ContactRow, LeadRow } from "@dracara/types";
+
+/** POST /leads returns the lead together with the pursuit it opened. */
+type LeadCreated = { lead: LeadRow; opportunities: { id: string }[] };
 import {
   Button,
   Input,
@@ -38,7 +41,7 @@ const EMPTY_FORM = {
   project_type: "",
   lead_source: "",
   stage: "prospect",
-  estimated_value: "",
+  quoted_value: "",
   currency: "INR",
   deal_probability: "50",
   next_followup_date: "",
@@ -73,28 +76,35 @@ export function AddLeadDrawer() {
 
   const createLead = useMutation({
     mutationFn: () => {
+      // The lead carries qualification data; stage and commercials belong to the pursuit
+      // opened alongside it, which the API creates in the same call.
       const payload = compactPayload({
         company_id: form.company_id,
         primary_contact_id: form.primary_contact_id,
         project_type: form.project_type,
         lead_source: form.lead_source,
-        stage: form.stage,
-        currency: form.currency,
-        estimated_value: form.estimated_value ? Number(form.estimated_value) : "",
-        deal_probability: form.deal_probability ? Number(form.deal_probability) : "",
         next_followup_date: form.next_followup_date,
         tags: parseTags(form.tags),
       });
-      return apiFetch<LeadRow>("/leads", { method: "POST", body: JSON.stringify(payload) });
+      const opportunity = compactPayload({
+        stage: form.stage,
+        currency: form.currency,
+        quoted_value: form.quoted_value ? Number(form.quoted_value) : "",
+        deal_probability: form.deal_probability ? Number(form.deal_probability) : "",
+      });
+      return apiFetch<LeadCreated>("/leads", {
+        method: "POST",
+        body: JSON.stringify({ ...payload, opportunity }),
+      });
     },
-    onSuccess: (lead) => {
+    onSuccess: (created) => {
       // The lead's opportunity and intelligence rows are created by database triggers,
       // so the pipeline and dashboard views are stale too.
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["opportunities"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       toast.success("Lead created", {
-        description: companies.find((c) => c.id === lead.company_id)?.name ?? undefined,
+        description: companies.find((c) => c.id === created.lead.company_id)?.name ?? undefined,
       });
       setForm(EMPTY_FORM);
       setOpen(false);
@@ -268,8 +278,8 @@ export function AddLeadDrawer() {
                   step="1000"
                   inputMode="numeric"
                   placeholder="1500000"
-                  value={form.estimated_value}
-                  onChange={(e) => set("estimated_value", e.target.value)}
+                  value={form.quoted_value}
+                  onChange={(e) => set("quoted_value", e.target.value)}
                 />
               </div>
               <div className="space-y-2">

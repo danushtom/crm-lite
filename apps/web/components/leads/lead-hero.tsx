@@ -64,8 +64,13 @@ export function LeadHero({ id }: { id: string }) {
 
   const opportunityId = opportunity ? String(opportunity.id) : null;
 
-  const convert = useApiMutation({
-    errorTitle: "Could not convert lead",    mutationFn: () => apiFetch(`/leads/${id}/convert`, { method: "POST", body: "{}" }),
+  const openPursuit = useApiMutation({
+    errorTitle: "Could not open an opportunity",
+    mutationFn: () =>
+      apiFetch(`/leads/${id}/opportunities`, {
+        method: "POST",
+        body: JSON.stringify({ title: "New pursuit" }),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["lead", id] });
       qc.invalidateQueries({ queryKey: ["opportunity-by-lead", id] });
@@ -83,7 +88,8 @@ export function LeadHero({ id }: { id: string }) {
   const bucket = leadStageToCompanyStage(stageRaw);
   const projectType = humanizeUnderscore(String(lead?.project_type ?? "other"));
   const source = humanizeUnderscore(String(lead?.lead_source ?? "other"));
-  const isOpportunity = Boolean(lead?.is_opportunity);
+  // Every lead has at least one pursuit; this reflects whether one is currently open.
+  const isOpportunity = Boolean(opportunity);
 
   const companyInitial = (company?.name ?? "?").trim().slice(0, 1).toUpperCase();
 
@@ -169,11 +175,11 @@ export function LeadHero({ id }: { id: string }) {
                 <Button
                   size="sm"
                   className="ml-auto h-9 gap-1.5 bg-[#0A1128] text-xs font-semibold text-white hover:bg-[#1a2a53] shadow-sm"
-                  disabled={convert.isPending}
-                  onClick={() => convert.mutate()}
+                  disabled={openPursuit.isPending}
+                  onClick={() => openPursuit.mutate()}
                 >
                   <Sparkles className="h-3.5 w-3.5" />
-                  {convert.isPending ? "Converting…" : "Activate as opportunity"}
+                  {openPursuit.isPending ? "Opening…" : "Open an opportunity"}
                 </Button>
               )}
             </div>

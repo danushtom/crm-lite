@@ -13,19 +13,29 @@ from tests.conftest import FakeDb, FakeResult
 LEAD_ID = "lead-1"
 OPP_ID = "opp-1"
 
+# A lead is now purely a qualification record: no stage, no money, no score.
 BASE_LEAD = {
     "id": LEAD_ID,
     "company_id": "co-1",
     "owner_id": "user-1",
-    "stage": "prospect",
     "project_type": "saas",
     "lead_source": "referral",
-    "estimated_value": 500000,
+    "tags": [],
+    "version": 1,
+}
+
+BASE_OPPORTUNITY = {
+    "id": OPP_ID,
+    "lead_id": LEAD_ID,
+    "owner_id": "user-1",
+    "title": "Saas",
+    "stage": "prospect",
+    "status": "active",
+    "quoted_value": 500000,
     "currency": "INR",
     "deal_probability": 50,
     "priority_score": 0,
-    "tags": [],
-    "is_opportunity": False,
+    "version": 1,
 }
 
 
@@ -33,49 +43,24 @@ def db_with(**responses) -> FakeDb:
     return FakeDb(responses)
 
 
-# --- Pipeline field routing ---------------------------------------------------
+# --- Ownership of fields ------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_pipeline_fields_are_written_to_the_opportunity_not_the_lead():
-    """`leads` mirrors the opportunity via trigger; writing stage there would be reverted."""
+async def test_lead_update_is_a_single_write():
+    """Before the tables were separated this split the payload across two tables and
+    re-read, costing up to eight round trips. Every field here belongs to the lead."""
     db = db_with(**{
         "GET leads": BASE_LEAD,
-        "GET opportunities": {"id": OPP_ID, "priority_score": 0},
-        "PATCH opportunities": {"id": OPP_ID},
-        "PATCH leads": BASE_LEAD,
-        "GET lead_intelligence": None,
-    })
-
-    await lead_service.update_lead(db, LEAD_ID, {"stage": "negotiation", "estimated_value": 900000})
-
-    opp_writes = [c for c in db.calls if c[0] == "PATCH" and c[1] == "opportunities"]
-    assert opp_writes, "stage change must be written to the opportunity"
-    body = opp_writes[0][2]["payload"]
-    assert body["stage"] == "negotiation"
-    # estimated_value is named quoted_value on the opportunity.
-    assert body["quoted_value"] == 900000
-    assert "estimated_value" not in body
-
-    lead_writes = [c for c in db.calls if c[0] == "PATCH" and c[1] == "leads"]
-    for _, _, kwargs in lead_writes:
-        assert "stage" not in kwargs["payload"], "stage must never be written directly to leads"
-
-
-@pytest.mark.asyncio
-async def test_non_pipeline_fields_go_straight_to_the_lead():
-    db = db_with(**{
-        "GET leads": BASE_LEAD,
-        "PATCH leads": BASE_LEAD,
-        "GET opportunities": None,
-        "GET lead_intelligence": None,
+        "PATCH leads": {**BASE_LEAD, "next_followup_date": "2026-09-01"},
     })
 
     await lead_service.update_lead(db, LEAD_ID, {"next_followup_date": "2026-09-01"})
 
-    assert not [c for c in db.calls if c[0] == "PATCH" and c[1] == "opportunities"]
-    lead_writes = [c for c in db.calls if c[0] == "PATCH" and c[1] == "leads"]
-    assert lead_writes[0][2]["payload"]["next_followup_date"] == "2026-09-01"
+    writes = [c for c in db.calls if c[0] == "PATCH"]
+    assert len(writes) == 1
+    assert writes[0][1] == "leads"
+    assert not [c for c in db.calls if c[1] == "opportunities"]
 
 
 @pytest.mark.asyncio
@@ -86,96 +71,142 @@ async def test_empty_update_is_a_no_op_read():
     assert not [c for c in db.calls if c[0] in ("PATCH", "POST")]
 
 
-# --- Scoring propagation ------------------------------------------------------
+# --- Scoring belongs to the pursuit -------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_score_is_mirrored_onto_the_opportunity():
+async def test_score_is_written_to_the_opportunity():
     db = db_with(**{
-        "GET leads": {**BASE_LEAD, "priority_score": 0, "deal_probability": 90},
         "GET lead_intelligence": {"decision_makers": "CTO"},
-        "GET opportunities": {"id": OPP_ID, "priority_score": 0},
-        "PATCH leads": BASE_LEAD,
-        "PATCH opportunities": {"id": OPP_ID},
+        "PATCH opportunities": {**BASE_OPPORTUNITY, "priority_score": 70},
     })
 
-    await lead_service.sync_priority_score(db, LEAD_ID)
+    await lead_service.sync_opportunity_score(db, dict(BASE_OPPORTUNITY))
 
-    opp_patch = [c for c in db.calls if c[0] == "PATCH" and c[1] == "opportunities"]
-    assert opp_patch, "recomputed score must reach the opportunity the Kanban reads"
-    assert opp_patch[0][2]["payload"]["priority_score"] > 0
+    writes = [c for c in db.calls if c[0] == "PATCH" and c[1] == "opportunities"]
+    assert writes, "a recomputed score must be persisted on the pursuit"
+    assert writes[0][2]["payload"]["priority_score"] > 0
 
 
 @pytest.mark.asyncio
 async def test_score_write_is_skipped_when_unchanged():
-    """Avoid a pointless UPDATE (and the trigger cascade it fires) when nothing moved."""
-    lead = {**BASE_LEAD, "priority_score": 0, "deal_probability": 50}
-    score = lead_service.score_for(lead, None)
-    db = db_with(**{
-        "GET leads": {**lead, "priority_score": score},
-        "GET lead_intelligence": None,
-        "GET opportunities": {"id": OPP_ID, "priority_score": score},
-    })
+    """Avoid a pointless UPDATE, and the trigger cascade it fires, when nothing moved."""
+    settled = dict(BASE_OPPORTUNITY)
+    settled["priority_score"] = lead_service.score_for(settled, None)
+    db = db_with(**{"GET lead_intelligence": None})
 
-    await lead_service.sync_priority_score(db, LEAD_ID)
+    await lead_service.sync_opportunity_score(db, settled)
 
     assert not [c for c in db.calls if c[0] == "PATCH"]
+
+
+@pytest.mark.asyncio
+async def test_score_override_pins_the_result():
+    pinned = {**BASE_OPPORTUNITY, "score_override": 91}
+    assert lead_service.score_for(pinned, None) == 91
 
 
 # --- Stage moves --------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_set_stage_targets_the_opportunity():
+async def test_set_stage_writes_to_the_opportunity():
     db = db_with(**{
-        "GET opportunities": {"id": OPP_ID, "priority_score": 10},
-        "PATCH opportunities": {"id": OPP_ID},
-        "GET leads": BASE_LEAD,
+        "PATCH opportunities": {**BASE_OPPORTUNITY, "stage": "won"},
         "GET lead_intelligence": None,
-        "PATCH leads": BASE_LEAD,
     })
 
-    await lead_service.set_stage(db, LEAD_ID, "won")
+    await lead_service.set_stage(db, OPP_ID, "won")
 
     patch = [c for c in db.calls if c[0] == "PATCH" and c[1] == "opportunities"][0]
     assert patch[2]["payload"]["stage"] == "won"
 
 
 @pytest.mark.asyncio
-async def test_missing_opportunity_shell_is_a_404():
+async def test_missing_active_opportunity_is_a_404():
     db = db_with(**{"GET opportunities": None})
     with pytest.raises(NotFoundError):
-        await lead_service.get_opportunity_for_lead(db, LEAD_ID)
+        await lead_service.get_active_opportunity(db, LEAD_ID)
 
 
-# --- Conversion ---------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_convert_is_not_repeatable():
-    db = db_with(**{"GET leads": {**BASE_LEAD, "is_opportunity": True}})
-    with pytest.raises(ConflictError):
-        await lead_service.convert_to_opportunity(db, LEAD_ID)
+# --- Creation -----------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_convert_copies_commercials_onto_the_opportunity():
+async def test_creating_a_lead_populates_the_pursuit_its_trigger_opened():
     db = db_with(**{
-        "GET leads": BASE_LEAD,
-        "GET opportunities": {"id": OPP_ID},
-        "PATCH opportunities": {"id": OPP_ID, "lead_id": LEAD_ID, "owner_id": "user-1",
-                                "title": "Saas", "stage": "prospect"},
-        "PATCH leads": {**BASE_LEAD, "is_opportunity": True},
+        "POST leads": BASE_LEAD,
+        "GET opportunities": [BASE_OPPORTUNITY],
+        "PATCH opportunities": {**BASE_OPPORTUNITY, "quoted_value": 900000},
     })
 
-    opportunity, lead = await lead_service.convert_to_opportunity(db, LEAD_ID)
+    lead, pursuits = await lead_service.create_lead(
+        db,
+        {"company_id": "co-1", "project_type": "saas", "lead_source": "referral"},
+        owner_id="user-1",
+        opportunity={"quoted_value": 900000, "stage": "contacting", "deal_probability": 70},
+    )
 
+    assert lead["id"] == LEAD_ID
     body = [c for c in db.calls if c[0] == "PATCH" and c[1] == "opportunities"][0][2]["payload"]
-    assert body["quoted_value"] == BASE_LEAD["estimated_value"]
-    assert body["currency"] == "INR"
-    assert body["status"] == "active"
-    assert lead["is_opportunity"] is True
-    assert opportunity["id"] == OPP_ID
+    assert body["quoted_value"] == 900000
+    assert body["stage"] == "contacting"
+    assert "priority_score" in body, "score must be derived server-side at creation"
+    assert pursuits[0]["quoted_value"] == 900000
+
+
+@pytest.mark.asyncio
+async def test_lead_creation_defaults_owner_to_the_caller():
+    db = db_with(**{"POST leads": BASE_LEAD, "GET opportunities": [BASE_OPPORTUNITY]})
+
+    await lead_service.create_lead(
+        db, {"company_id": "co-1", "project_type": "saas", "lead_source": "referral"},
+        owner_id="user-9",
+    )
+
+    payload = [c for c in db.calls if c[0] == "POST"][0][2]["payload"]
+    assert payload["owner_id"] == "user-9"
+
+
+# --- A lead may have several pursuits -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_opening_a_second_pursuit_is_allowed():
+    """The build, then the retainer. The old UNIQUE(lead_id) made this impossible."""
+    db = db_with(**{
+        "GET leads": BASE_LEAD,
+        "GET lead_intelligence": None,
+        "POST opportunities": {**BASE_OPPORTUNITY, "id": "opp-2", "title": "Retainer"},
+    })
+
+    created = await lead_service.open_opportunity(
+        db, LEAD_ID, {"title": "Retainer", "quoted_value": 250000}, owner_id="user-1"
+    )
+
+    assert created["id"] == "opp-2"
+    payload = [c for c in db.calls if c[0] == "POST"][0][2]["payload"]
+    assert payload["lead_id"] == LEAD_ID
+    assert payload["status"] == "active"
+    assert "priority_score" in payload
+
+
+@pytest.mark.asyncio
+async def test_a_second_active_pursuit_is_rejected_clearly():
+    """A partial unique index allows only one active pursuit; surface that as guidance."""
+
+    class Conflicting(FakeDb):
+        async def insert(self, table, payload):
+            raise ConflictError("duplicate key value violates unique constraint")
+
+    db = Conflicting({"GET leads": BASE_LEAD, "GET lead_intelligence": None})
+
+    with pytest.raises(ConflictError) as excinfo:
+        await lead_service.open_opportunity(
+            db, LEAD_ID, {"title": "Second"}, owner_id="user-1"
+        )
+
+    assert "already has an active opportunity" in str(excinfo.value)
 
 
 # --- Meeting outcomes ---------------------------------------------------------
@@ -199,6 +230,7 @@ async def test_outcome_requiring_next_step_schedules_a_task(outcome):
     payload = [c for c in db.calls if c[0] == "POST" and c[1] == "tasks"][0][2]["payload"]
     assert payload["lead_id"] == LEAD_ID
     assert payload["status"] == "pending"
+    assert "due_at" in payload, "follow-ups are scheduled as absolute instants"
 
 
 @pytest.mark.asyncio

@@ -60,27 +60,46 @@ export interface ContactRow {
   created_at: string;
 }
 
+/**
+ * A lead is a *qualification* record: who the prospect is, where they came from and when to
+ * follow up. Pipeline stage and commercials belong to its opportunities -- a lead may have
+ * several over time (the build, then the retainer). Use the helpers in `lib/leads.ts` to read
+ * a lead's current pipeline position.
+ */
 export interface LeadRow {
   id: string;
   company_id: string;
   primary_contact_id: string | null;
   owner_id: string;
-  stage: LeadStage;
   project_type: ProjectType;
   lead_source: LeadSource;
-  estimated_value: number | null;
+  last_contact_date: string | null;
+  next_followup_date: string | null;
+  tags: string[];
+  no_touch_alert?: boolean | null;
+  created_at: string;
+  updated_at: string;
+  /** Monotonic row version, returned as an ETag and sent back via If-Match. */
+  version: number;
+}
+
+/** A lead's pursuit, as embedded in lead responses. */
+export interface LeadOpportunityRow {
+  id: string;
+  title: string;
+  stage: LeadStage;
+  status: OpportunityStatus;
+  quoted_value: number | null;
   currency: string;
   deal_probability: number;
   priority_score: number;
-  last_contact_date: string | null;
-  next_followup_date: string | null;
-  is_opportunity: boolean;
-  tags: string[];
-  no_touch_alert?: boolean | null;
-  score_override?: number | null;
-  score_override_reason?: string | null;
-  created_at: string;
   updated_at: string;
+}
+
+/** A lead as returned by list and detail endpoints, with its pursuits embedded. */
+export interface LeadWithOpportunities extends LeadRow {
+  companies?: Partial<CompanyRow> | null;
+  opportunities: LeadOpportunityRow[];
 }
 
 export interface LeadIntelligenceRow {
@@ -135,6 +154,7 @@ export interface TaskRow {
   snoozed_to: string | null;
   completed_at: string | null;
   created_at: string;
+  version: number;
 }
 
 export type MeetingStatus = "scheduled" | "completed" | "cancelled" | "rescheduled";
@@ -168,7 +188,7 @@ export interface OpportunityRow {
   lead_id: string;
   owner_id: string;
   title: string;
-  /** Pipeline position (same enum as leads.stage; synced to leads for scoring APIs). */
+  /** Pipeline position. Owned here; leads no longer carry a copy. */
   stage: LeadStage;
   quoted_value: number | null;
   currency: string;
@@ -180,11 +200,15 @@ export interface OpportunityRow {
   requirements_doc: string | null;
   architecture_notes: string | null;
   status: OpportunityStatus;
+  score_override: number | null;
+  score_override_reason: string | null;
   created_at: string;
   updated_at: string;
+  /** Monotonic row version, returned as an ETag and sent back via If-Match. */
+  version: number;
 }
 
-/** Shape returned by `GET /opportunities?lead_id=` — a light subset of {@link OpportunityRow}. */
+/** Shape returned by `GET /opportunities/by-lead/{id}` — a light subset of {@link OpportunityRow}. */
 export type OpportunitySummaryRow = Pick<
   OpportunityRow,
   | "id"

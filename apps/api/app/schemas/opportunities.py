@@ -1,25 +1,46 @@
 """Opportunity and proposal schemas.
 
-The pipeline (Kanban) lives on ``opportunities`` -- one row per lead -- with ``leads`` kept in
-sync by a database trigger. See ``supabase/migrations/20260429140000_opportunities_pipeline.sql``.
+An opportunity is a *pursuit* against a lead: its pipeline stage, commercials, scope and
+proposal history. A lead may have several over time -- the build, then the retainer -- of
+which at most one is active. Nothing here is mirrored onto the lead.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import Field
 
-from app.domain.enums import LeadStage, OpportunityStatus, ProposalStatus
+from app.domain.enums import (
+    LeadSource,
+    LeadStage,
+    OpportunityStatus,
+    ProjectType,
+    ProposalStatus,
+)
 from app.schemas.common import APIModel, Money, PatchModel, StrictAPIModel
-from app.schemas.leads import LeadWithCompany
+from app.schemas.companies import Company
+
+
+class OpportunityOpen(StrictAPIModel):
+    """Body for opening a further pursuit against an existing lead."""
+
+    title: str = Field(min_length=1, max_length=200)
+    stage: LeadStage = LeadStage.PROSPECT
+    quoted_value: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    currency: str = Field(default="INR", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+    deal_probability: int = Field(default=50, ge=0, le=100)
+    timeline_weeks: int | None = Field(default=None, ge=0, le=520)
+    tech_stack: str | None = Field(default=None, max_length=5_000)
 
 
 class OpportunityUpdate(PatchModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     quoted_value: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
-    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    currency: str | None = Field(
+        default=None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$"
+    )
     timeline_weeks: int | None = Field(default=None, ge=0, le=520)
     tech_stack: str | None = Field(default=None, max_length=5_000)
     requirements_doc: str | None = Field(default=None, max_length=50_000)
@@ -27,8 +48,10 @@ class OpportunityUpdate(PatchModel):
     status: OpportunityStatus | None = None
     stage: LeadStage | None = None
     deal_probability: int | None = Field(default=None, ge=0, le=100)
-    priority_score: int | None = Field(default=None, ge=0, le=100)
-    tags: list[str] | None = Field(default=None, max_length=25)
+    score_override: int | None = Field(
+        default=None, ge=0, le=100, description="Pins priority_score, bypassing the scoring model."
+    )
+    score_override_reason: str | None = Field(default=None, max_length=500)
 
 
 class Proposal(APIModel):
@@ -46,6 +69,7 @@ class Proposal(APIModel):
     sent_at: datetime | None = None
     created_by: str | None = None
     created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class ProposalCreate(StrictAPIModel):
@@ -68,7 +92,8 @@ class Opportunity(APIModel):
     currency: str = "INR"
     deal_probability: int = 50
     priority_score: int = 0
-    tags: list[str] = Field(default_factory=list)
+    score_override: int | None = None
+    score_override_reason: str | None = None
     timeline_weeks: int | None = None
     tech_stack: str | None = None
     requirements_doc: str | None = None
@@ -88,10 +113,28 @@ class OpportunityDetail(Opportunity):
     proposals: list[Proposal] = Field(default_factory=list)
 
 
-class OpportunityWithLead(Opportunity):
-    """Kanban board row: opportunity plus its lead and that lead's company."""
+class OpportunityLead(APIModel):
+    """The qualification record behind a pursuit, as embedded in board rows.
 
-    leads: LeadWithCompany | None = None
+    Carries no stage or commercials: those belong to the opportunity itself.
+    """
+
+    id: str
+    company_id: str
+    primary_contact_id: str | None = None
+    owner_id: str
+    project_type: ProjectType
+    lead_source: LeadSource
+    last_contact_date: date | None = None
+    next_followup_date: date | None = None
+    tags: list[str] = Field(default_factory=list)
+    companies: Company | None = None
+
+
+class OpportunityWithLead(Opportunity):
+    """Kanban board row: the pursuit plus the lead and company it belongs to."""
+
+    leads: OpportunityLead | None = None
 
 
 class OpportunitySummary(APIModel):
@@ -111,19 +154,3 @@ class OpportunitySummary(APIModel):
         default=1,
         description="Monotonic row version. Returned as an ETag; send it back via If-Match.",
     )
-
-
-class LeadConversion(APIModel):
-    """Result of promoting a lead to a tracked opportunity."""
-
-    opportunity: Opportunity
-    lead: "LeadRef"
-
-
-class LeadRef(APIModel):
-    id: str
-    is_opportunity: bool = True
-    stage: LeadStage | None = None
-
-
-LeadConversion.model_rebuild()

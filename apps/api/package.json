@@ -2,9 +2,9 @@
   "name": "api",
   "private": true,
   "scripts": {
-    "dev": ".venv/Scripts/uvicorn app.main:app --reload --port 8000",
+    "dev": ".venv\\Scripts\\uvicorn app.main:app --reload --port 8000",
     "dev:unix": ".venv/bin/uvicorn app.main:app --reload --port 8000",
-    "test": ".venv/Scripts/python -m pytest -q",
+    "test": ".venv\\Scripts\\python -m pytest -q",
     "test:unix": ".venv/bin/python -m pytest -q"
   }
 }

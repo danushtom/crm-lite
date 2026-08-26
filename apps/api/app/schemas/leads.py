@@ -1,4 +1,9 @@
-"""Lead, lead-intelligence and activity schemas."""
+"""Lead, lead-intelligence and activity schemas.
+
+A lead is a *qualification* record: who the prospect is, where they came from, what kind of
+work they want, and when to follow up. Pipeline position and commercials belong to its
+opportunities (see :mod:`app.schemas.opportunities`), of which a lead may have several.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +18,20 @@ from app.schemas.common import APIModel, Money, PatchModel, StrictAPIModel
 from app.schemas.companies import Company
 
 
+class InitialOpportunity(StrictAPIModel):
+    """Commercials for the pursuit opened alongside a new lead.
+
+    Creating a lead always opens its first opportunity; this lets the caller populate it in
+    the same request instead of following up with a PATCH.
+    """
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    stage: LeadStage = LeadStage.PROSPECT
+    quoted_value: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    currency: str = Field(default="INR", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+    deal_probability: int = Field(default=50, ge=0, le=100)
+
+
 class LeadCreate(StrictAPIModel):
     company_id: str = Field(description="Company this lead belongs to.")
     project_type: ProjectType
@@ -21,37 +40,24 @@ class LeadCreate(StrictAPIModel):
     owner_id: str | None = Field(
         default=None, description="Defaults to the authenticated user when omitted."
     )
-    stage: LeadStage = LeadStage.PROSPECT
-    estimated_value: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
-    currency: str = Field(default="INR", min_length=3, max_length=3)
-    deal_probability: int = Field(default=50, ge=0, le=100)
     last_contact_date: date | None = None
     next_followup_date: date | None = None
     tags: list[str] = Field(default_factory=list, max_length=25)
+    opportunity: InitialOpportunity | None = Field(
+        default=None,
+        description="Commercials for the initial pursuit. Defaults are used when omitted.",
+    )
 
 
 class LeadUpdate(PatchModel):
     company_id: str | None = None
     primary_contact_id: str | None = None
     owner_id: str | None = None
-    stage: LeadStage | None = None
     project_type: ProjectType | None = None
     lead_source: LeadSource | None = None
-    estimated_value: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
-    currency: str | None = Field(default=None, min_length=3, max_length=3)
-    deal_probability: int | None = Field(default=None, ge=0, le=100)
     last_contact_date: date | None = None
     next_followup_date: date | None = None
     tags: list[str] | None = Field(default=None, max_length=25)
-    is_opportunity: bool | None = None
-    score_override: int | None = Field(
-        default=None, ge=0, le=100, description="Pins priority_score, bypassing the scoring model."
-    )
-    score_override_reason: str | None = Field(default=None, max_length=500)
-
-
-class LeadStageUpdate(StrictAPIModel):
-    stage: LeadStage = Field(description="Target pipeline stage.")
 
 
 class Lead(APIModel):
@@ -59,18 +65,10 @@ class Lead(APIModel):
     company_id: str
     primary_contact_id: str | None = None
     owner_id: str
-    stage: LeadStage
     project_type: ProjectType
     lead_source: LeadSource
-    estimated_value: Money | None = None
-    currency: str = "INR"
-    deal_probability: int = 50
-    priority_score: int = 0
-    score_override: int | None = None
-    score_override_reason: str | None = None
     last_contact_date: date | None = None
     next_followup_date: date | None = None
-    is_opportunity: bool = False
     tags: list[str] = Field(default_factory=list)
     no_touch_alert: bool | None = None
     created_at: datetime | None = None
@@ -81,10 +79,28 @@ class Lead(APIModel):
     )
 
 
+class LeadOpportunity(APIModel):
+    """A lead's pursuit, as embedded in lead responses."""
+
+    id: str
+    title: str
+    stage: LeadStage
+    status: str
+    quoted_value: Money | None = None
+    currency: str = "INR"
+    deal_probability: int = 50
+    priority_score: int = 0
+    updated_at: datetime | None = None
+
+
 class LeadWithCompany(Lead):
-    """List representation with the company embedded."""
+    """List representation: company embedded, plus every pursuit against this lead.
+
+    Pipeline position is read from ``opportunities`` rather than duplicated onto the lead.
+    """
 
     companies: Company | None = None
+    opportunities: list[LeadOpportunity] = Field(default_factory=list)
 
 
 class LeadIntelligence(APIModel):
@@ -123,7 +139,10 @@ class Activity(APIModel):
     type: ActivityType
     description: str
     outcome: str | None = None
-    performed_by: str
+    performed_by: str | None = Field(
+        default=None, description="Null for actions taken by the system rather than a person."
+    )
+    actor_type: str = Field(default="user", description="'user' or 'system'.")
     performed_at: datetime | None = None
     metadata: dict[str, Any] | None = None
 
@@ -136,10 +155,11 @@ class ActivityCreate(StrictAPIModel):
 
 
 class LeadDetail(APIModel):
-    """``GET /leads/{id}`` -- the lead plus its intelligence panel and, optionally, related records."""
+    """``GET /leads/{id}`` -- the lead, its intelligence panel and its pursuits."""
 
     lead: Lead
     lead_intelligence: LeadIntelligence | None = None
+    opportunities: list[LeadOpportunity] = Field(default_factory=list)
     activities: list[Activity] | None = Field(
         default=None, description="Present only when include_related=true."
     )

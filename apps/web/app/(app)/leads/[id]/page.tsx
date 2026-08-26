@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from "@dracara/ui";
-import { scoreTier, type CompanyRow, type ContactRow, type LeadRow, type LeadIntelligenceRow, type ActivityRow, type OpportunitySummaryRow } from "@dracara/types";
+import { scoreTier, type CompanyRow, type ContactRow, type LeadWithOpportunities, type LeadIntelligenceRow, type ActivityRow, type OpportunitySummaryRow } from "@dracara/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiMutation } from "@/lib/use-api-mutation";
 import { format, parseISO } from "date-fns";
@@ -67,7 +67,7 @@ function formatActivityWhen(iso: string | undefined): string {
 }
 
 type LeadDetailResponse = {
-  lead: LeadRow;
+  lead: LeadWithOpportunities;
   lead_intelligence: LeadIntelligenceRow | null;
   activities?: ActivityRow[];
 };
@@ -108,17 +108,28 @@ export default function LeadOverviewPage() {
   const opportunityId = opportunity ? String(opportunity.id) : null;
   const oppRows = opportunity ? [opportunity] : [];
 
+  // A lead carries no pipeline data of its own; everything below reads from its pursuit.
+  const pursuitValue = opportunity?.quoted_value ?? null;
+  const pursuitCurrency = opportunity?.currency ?? "INR";
+  const pursuitProbability = opportunity?.deal_probability ?? 0;
+
   const update = useApiMutation({
     errorTitle: "Could not update lead",    mutationFn: (patch: Record<string, unknown>) =>
       apiFetch(`/leads/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["lead", id] }),
   });
 
-  const convert = useApiMutation({
-    errorTitle: "Could not update lead",    mutationFn: () => apiFetch(`/leads/${id}/convert`, { method: "POST", body: "{}" }),
+  const openPursuit = useApiMutation({
+    errorTitle: "Could not open an opportunity",
+    mutationFn: () =>
+      apiFetch(`/leads/${id}/opportunities`, {
+        method: "POST",
+        body: JSON.stringify({ title: "New pursuit" }),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["lead", id] });
       qc.invalidateQueries({ queryKey: ["opportunity-by-lead", id] });
+      qc.invalidateQueries({ queryKey: ["opportunities"] });
     },
   });
 
@@ -148,9 +159,9 @@ export default function LeadOverviewPage() {
     );
   }
 
-  const score = Number(lead?.priority_score ?? 0);
+  const score = Number(opportunity?.priority_score ?? 0);
   const tier = scoreTier(score);
-  const stageRaw = String(lead?.stage ?? "prospect");
+  const stageRaw = String(opportunity?.stage ?? "prospect");
   const pipelineLabel = humanizeUnderscore(stageRaw);
 
   const tags = Array.isArray(lead?.tags) ? (lead?.tags as unknown[]).map((t) => String(t)) : [];
@@ -181,7 +192,7 @@ export default function LeadOverviewPage() {
               <DollarSign className="h-4 w-4 shrink-0 text-muted-foreground/80" />
             </div>
             <p className="mt-3 text-2xl font-semibold tabular-nums leading-none text-[#0A1128] dark:text-foreground">
-              {formatCurrency(lead?.estimated_value, lead?.currency)}
+              {formatCurrency(pursuitValue, pursuitCurrency)}
             </p>
             <div className={kpiFooterSpacer} aria-hidden />
           </CardContent>
@@ -194,19 +205,19 @@ export default function LeadOverviewPage() {
               <Percent className="h-4 w-4 shrink-0 text-muted-foreground/80" />
             </div>
             <p className="mt-3 text-2xl font-semibold tabular-nums leading-none text-[#0A1128] dark:text-foreground">
-              {String(lead?.deal_probability ?? "0")}%
+              {pursuitProbability}%
             </p>
             <div className={`${kpiFooterSpacer} flex flex-col justify-end`}>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
                   className={`h-full rounded-full ${
-                    Number(lead?.deal_probability) >= 70
+                    pursuitProbability >= 70
                       ? "bg-emerald-500"
-                      : Number(lead?.deal_probability) >= 40
+                      : pursuitProbability >= 40
                         ? "bg-amber-500"
                         : "bg-rose-500"
                   }`}
-                  style={{ width: `${Number(lead?.deal_probability ?? 0)}%` }}
+                  style={{ width: `${pursuitProbability}%` }}
                 />
               </div>
             </div>
@@ -518,13 +529,13 @@ export default function LeadOverviewPage() {
             ) : (
               <div className="flex flex-col items-center justify-center py-10 text-center">
                 <p className="text-sm text-muted-foreground">No active opportunities.</p>
-                {!lead?.is_opportunity && (
+                {lead && (
                   <Button
                     size="sm"
                     variant="outline"
                     className="mt-4 h-8 gap-1.5 text-xs"
-                    disabled={convert.isPending}
-                    onClick={() => convert.mutate()}
+                    disabled={openPursuit.isPending}
+                    onClick={() => openPursuit.mutate()}
                   >
                     <Sparkles className="h-3.5 w-3.5" />
                     Activate pipeline
