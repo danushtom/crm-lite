@@ -1,0 +1,11 @@
+{
+  "name": "worker",
+  "private": true,
+  "scripts": {
+    "dev": ".venv\\Scripts\\celery -A worker_app worker --loglevel=info -P solo",
+    "dev:unix": ".venv/bin/celery -A worker_app worker -B --loglevel=info",
+    "dev:beat": ".venv\\Scripts\\celery -A worker_app beat --loglevel=info",
+    "test": ".venv\\Scripts\\python -m pytest -q",
+    "test:unix": ".venv/bin/python -m pytest -q"
+  }
+}
