@@ -7,7 +7,7 @@ from datetime import datetime
 from pydantic import Field
 
 from app.domain.enums import MeetingOutcome, MeetingStatus
-from app.schemas.common import APIModel, StrictAPIModel
+from app.schemas.common import APIModel, PatchModel, StrictAPIModel
 
 
 class Meeting(APIModel):
@@ -51,3 +51,13 @@ class MeetingOutcomeResult(APIModel):
         default=None,
         description="Id of the follow-up task created by this outcome, when one was triggered.",
     )
+
+
+class MeetingUpdate(PatchModel):
+    """Reschedule or amend a meeting. Recording an *outcome* has its own endpoint."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    scheduled_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=5, le=8 * 60)
+    status: MeetingStatus | None = None
+    google_meet_link: str | None = Field(default=None, max_length=500)

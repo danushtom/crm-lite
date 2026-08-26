@@ -7,7 +7,7 @@ from datetime import datetime
 from pydantic import EmailStr, Field
 
 from app.domain.enums import UserRole
-from app.schemas.common import APIModel, StrictAPIModel
+from app.schemas.common import APIModel, PatchModel, StrictAPIModel
 
 
 class Agent(APIModel):
@@ -43,3 +43,20 @@ class AgentPerformance(APIModel):
     meetings_count: int
     wins: int = Field(description="Owned leads currently in the 'won' stage.")
     win_rate: float = Field(description="wins / assigned_leads, 0 when the agent owns no leads.")
+
+
+class AgentUpdate(PatchModel):
+    """Admin-only changes to a team member.
+
+    Role changes and deactivation are guarded in the database: a non-admin cannot change any
+    role, and the last active admin cannot be demoted or switched off.
+    """
+
+    full_name: str | None = Field(default=None, max_length=200)
+    role: UserRole | None = None
+    is_active: bool | None = None
+    timezone: str | None = Field(
+        default=None,
+        max_length=64,
+        description="IANA zone used for this user's follow-up day boundaries.",
+    )

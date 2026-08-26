@@ -5,15 +5,22 @@ from __future__ import annotations
 import logging
 
 import httpx
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Request, Response, status
 
 from app.api.deps import AdminDep, DbDep
 from app.core.config import settings
 from app.core.errors import NotConfiguredError, UpstreamError
 from app.core.pagination import Page, PageParamsDep
+from app.core.concurrency import IfMatchDep, set_etag, update_guarded
 from app.core.rate_limit import limiter
 from app.db.supabase import get_http_client
-from app.schemas.agents import Agent, AgentInvite, AgentInviteResult, AgentPerformance
+from app.schemas.agents import (
+    Agent,
+    AgentInvite,
+    AgentInviteResult,
+    AgentPerformance,
+    AgentUpdate,
+)
 from app.schemas.common import ERROR_RESPONSES
 
 logger = logging.getLogger(__name__)
@@ -121,3 +128,50 @@ async def agent_performance(agent_id: str, db: DbDep, _admin: AdminDep) -> Agent
         wins=wins,
         win_rate=round(wins / assigned, 4) if assigned else 0.0,
     )
+
+
+@router.get(
+    "/{agent_id}",
+    response_model=Agent,
+    summary="Get an agent",
+    description="Requires the admin role.",
+    responses=ERROR_RESPONSES,
+)
+async def get_agent(agent_id: str, db: DbDep, response: Response, _admin: AdminDep) -> Agent:
+    result = await db.select("users", params={"select": "*", "id": f"eq.{agent_id}"})
+    row = result.one("Agent")
+    set_etag(response, row)
+    return Agent.model_validate(row)
+
+
+@router.patch(
+    "/{agent_id}",
+    response_model=Agent,
+    summary="Change an agent's role, name, timezone or access",
+    description=(
+        "Requires the admin role. Previously there was no way to promote someone, correct a "
+        "name, or revoke access for someone who had left, short of editing the table by hand. "
+        "The database refuses to demote or deactivate the last active admin, so an "
+        "organisation cannot lock itself out."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def update_agent(
+    agent_id: str,
+    body: AgentUpdate,
+    db: DbDep,
+    response: Response,
+    if_match: IfMatchDep,
+    _admin: AdminDep,
+) -> Agent:
+    changes = AgentUpdate.model_validate(body.changes()).model_dump(
+        exclude_unset=True, mode="json"
+    )
+    if not changes:
+        return await get_agent(agent_id, db, response, _admin)
+
+    row = await update_guarded(
+        db, "users", record_id=agent_id, changes=changes, if_match=if_match, what="Agent"
+    )
+    set_etag(response, row)
+    return Agent.model_validate(row)

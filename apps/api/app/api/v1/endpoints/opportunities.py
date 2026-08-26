@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import CurrentUserDep, DbDep
-from app.core.concurrency import IfMatchDep, set_etag, update_guarded
+from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.domain.enums import LeadStage, OpportunityStatus
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
@@ -226,3 +226,22 @@ async def upload_proposal(
         created_by=user.sub,
     )
     return Proposal.model_validate(created)
+
+
+@router.delete(
+    "/{opportunity_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an opportunity",
+    description=(
+        "A soft delete, for a pursuit opened by mistake. To record one that ended, set its "
+        "status to won or lost instead -- that keeps it in the pipeline history."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def delete_opportunity(
+    opportunity_id: str, db: DbDep, if_match: IfMatchDep
+) -> Response:
+    await soft_delete_guarded(
+        db, "opportunities", record_id=opportunity_id, if_match=if_match, what="Opportunity"
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

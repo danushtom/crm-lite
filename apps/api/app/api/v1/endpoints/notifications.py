@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentUserDep, DbDep
 from app.core.pagination import Page, PageParamsDep
@@ -90,3 +90,19 @@ async def update_notification(
         "notifications", {"id": f"eq.{notification_id}"}, {"read_at": read_at}
     )
     return Notification.model_validate(result.one("Notification"))
+
+
+@router.delete(
+    "/{notification_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Dismiss a notification",
+    responses=ERROR_RESPONSES,
+)
+async def delete_notification(notification_id: str, db: DbDep) -> Response:
+    existing = await db.select(
+        "notifications", params={"select": "id", "id": f"eq.{notification_id}"}
+    )
+    existing.one("Notification")
+
+    await db.delete("notifications", {"id": f"eq.{notification_id}"})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentUserDep, DbDep
+from app.core.errors import ForbiddenError
 from app.core.concurrency import IfMatchDep, set_etag, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.domain.enums import TaskStatus
@@ -94,3 +95,24 @@ async def update_task(
     )
     set_etag(response, row)
     return Task.model_validate(row)
+
+
+@router.delete(
+    "/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a task",
+    description=(
+        "Removes the task outright. Tasks are operational rather than part of the deal "
+        "record, so there is nothing to retain; to record that one was dealt with, complete "
+        "or cancel it instead."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def delete_task(task_id: str, db: DbDep) -> Response:
+    existing = await db.select("tasks", params={"select": "id", "id": f"eq.{task_id}"})
+    existing.one("Task")
+
+    deleted = await db.delete("tasks", {"id": f"eq.{task_id}"})
+    if deleted.first() is None:
+        raise ForbiddenError("You do not have permission to delete this task")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

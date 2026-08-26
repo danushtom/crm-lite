@@ -154,3 +154,15 @@ class OpportunitySummary(APIModel):
         default=1,
         description="Monotonic row version. Returned as an ETag; send it back via If-Match.",
     )
+
+
+class ProposalUpdate(PatchModel):
+    """Partial update. `sent_at` is stamped by the server when status becomes 'sent'."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    figma_url: str | None = Field(default=None, max_length=500)
+    github_url: str | None = Field(default=None, max_length=500)
+    loom_url: str | None = Field(default=None, max_length=500)
+    quoted_price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    change_notes: str | None = Field(default=None, max_length=5_000)
+    status: ProposalStatus | None = None

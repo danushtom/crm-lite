@@ -28,6 +28,23 @@ _ETAG_RE = re.compile(r'^(?:W/)?"?(\d+)"?$')
 #: Sent by a client that wants the write to apply regardless of the current version.
 ANY_VERSION = "*"
 
+#: Table -> the database function that soft-deletes it. Spelled out rather than derived:
+#: stripping a trailing 's' turns 'companies' into 'companie' and 'opportunities' into
+#: 'opportunitie', neither of which exists, and the failure would only show at runtime.
+#: Why a given resource can still be refused, phrased for the thing being deleted rather
+#: than reusing one message everywhere.
+_REFERENCED_DETAIL = {
+    "contacts": "This contact is the primary contact on a lead; reassign the lead first.",
+    "companies": "This company still has active leads; delete or reassign them first.",
+}
+
+_SOFT_DELETE_FUNCTIONS = {
+    "leads": "soft_delete_lead",
+    "contacts": "soft_delete_contact",
+    "companies": "soft_delete_company",
+    "opportunities": "soft_delete_opportunity",
+}
+
 
 class PreconditionFailedError(APIError):
     """The row moved on since the client last read it."""
@@ -147,7 +164,9 @@ async def soft_delete_guarded(
     whoever the caller is. The function does the ownership check explicitly and runs as its
     definer, which sidesteps the contradiction.
     """
-    function = f"soft_delete_{table.rstrip('s')}"
+    function = _SOFT_DELETE_FUNCTIONS.get(table)
+    if function is None:
+        raise NotFoundError(f"{what} cannot be deleted")
     payload: dict[str, Any] = {"p_id": record_id}
     if isinstance(if_match, int):
         payload["p_expected_version"] = if_match
@@ -165,9 +184,7 @@ async def soft_delete_guarded(
     if status_value == "not_found":
         raise NotFoundError(f"{what} not found")
     if status_value == "referenced":
-        raise ConflictError(
-            f"{what} is the primary contact on a lead; reassign the lead first"
-        )
+        raise ConflictError(_REFERENCED_DETAIL.get(table, f"{what} is still in use"))
     if status_value == "version_mismatch":
         raise PreconditionFailedError(
             f"{what} has been modified since you last read it "

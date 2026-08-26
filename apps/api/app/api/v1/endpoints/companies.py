@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentUserDep, DbDep
-from app.core.concurrency import IfMatchDep, set_etag, update_guarded
+from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
 from app.schemas.companies import Company, CompanyCreate, CompanyUpdate
@@ -105,3 +105,20 @@ async def update_company(
     )
     set_etag(response, row)
     return Company.model_validate(row)
+
+
+@router.delete(
+    "/{company_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a company",
+    description=(
+        "A soft delete: the row is hidden but retained. Fails with 409 while the company "
+        "still has live leads, which removing it would strand."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def delete_company(company_id: str, db: DbDep, if_match: IfMatchDep) -> Response:
+    await soft_delete_guarded(
+        db, "companies", record_id=company_id, if_match=if_match, what="Company"
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
