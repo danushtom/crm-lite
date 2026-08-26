@@ -241,6 +241,27 @@ class SupabaseClient:
     async def update(self, table: str, params: dict[str, str], payload: Any) -> Result:
         return await self.request("PATCH", f"/{table}", params=params, json_body=payload)
 
+    async def update_counting(
+        self, table: str, params: dict[str, str], payload: Any
+    ) -> int:
+        """Update without asking for the rows back, returning how many were affected.
+
+        Needed when the write makes the row invisible to its own SELECT policy. Soft delete is
+        the case in point: the policies exclude ``deleted_at IS NOT NULL``, so a PATCH that
+        sets it cannot satisfy the RETURNING clause and PostgREST reports zero rows -- which
+        is indistinguishable from "the policy denied the write". Asking for a count instead of
+        a representation sidesteps the problem entirely.
+        """
+        result = await self.request(
+            "PATCH",
+            f"/{table}",
+            params=params,
+            json_body=payload,
+            prefer="return=minimal",
+            count=True,
+        )
+        return result.count or 0
+
     async def delete(self, table: str, params: dict[str, str]) -> Result:
         return await self.request("DELETE", f"/{table}", params=params)
 

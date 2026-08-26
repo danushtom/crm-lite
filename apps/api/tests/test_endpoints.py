@@ -225,16 +225,24 @@ def test_snoozing_with_a_date_is_accepted(authed_client, fake_db):
 
 
 def test_delete_contact_returns_204(authed_client, fake_db):
-    fake_db.responses["GET contacts"] = FakeResult([CONTACT])
-    fake_db.responses["GET leads"] = FakeResult([])
-    fake_db.responses["DELETE contacts"] = FakeResult([CONTACT])
+    fake_db.responses["RPC soft_delete_contact"] = FakeResult({"status": "deleted"})
 
     assert authed_client.delete(f"{V1}/contacts/c-1").status_code == 204
 
 
+def test_delete_contact_is_a_soft_delete(authed_client, fake_db):
+    """A hard DELETE cascaded and destroyed history; the row is marked instead."""
+    fake_db.responses["RPC soft_delete_contact"] = FakeResult({"status": "deleted"})
+
+    authed_client.delete(f"{V1}/contacts/c-1")
+
+    assert not [c for c in fake_db.calls if c[0] == "DELETE"], "must not hard-delete"
+    rpc = [c for c in fake_db.calls if c[1] == "rpc/soft_delete_contact"]
+    assert rpc, "deletion goes through the database function"
+
+
 def test_delete_contact_referenced_by_a_lead_is_a_409(authed_client, fake_db):
-    fake_db.responses["GET contacts"] = FakeResult([CONTACT])
-    fake_db.responses["GET leads"] = FakeResult([{"id": "lead-1"}])
+    fake_db.responses["RPC soft_delete_contact"] = FakeResult({"status": "referenced"})
 
     response = authed_client.delete(f"{V1}/contacts/c-1")
 
@@ -243,10 +251,8 @@ def test_delete_contact_referenced_by_a_lead_is_a_409(authed_client, fake_db):
 
 
 def test_delete_contact_filtered_by_rls_is_a_403_not_a_silent_204(authed_client, fake_db):
-    """A DELETE that removes zero rows means the policy denied it; do not report success."""
-    fake_db.responses["GET contacts"] = FakeResult([CONTACT])
-    fake_db.responses["GET leads"] = FakeResult([])
-    fake_db.responses["DELETE contacts"] = FakeResult([])
+    """A write that touches zero rows means the policy denied it; do not report success."""
+    fake_db.responses["RPC soft_delete_contact"] = FakeResult({"status": "forbidden"})
 
     response = authed_client.delete(f"{V1}/contacts/c-1")
 
@@ -254,7 +260,7 @@ def test_delete_contact_filtered_by_rls_is_a_403_not_a_silent_204(authed_client,
 
 
 def test_delete_missing_contact_is_a_404(authed_client, fake_db):
-    fake_db.responses["GET contacts"] = FakeResult([])
+    fake_db.responses["RPC soft_delete_contact"] = FakeResult({"status": "not_found"})
     assert authed_client.delete(f"{V1}/contacts/c-1").status_code == 404
 
 

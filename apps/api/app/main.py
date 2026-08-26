@@ -20,6 +20,7 @@ from app.api.v1.router import api_router as v1_router
 from app.core.config import API_V1_PREFIX, settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.idempotency import IdempotencyMiddleware
 from app.core.middleware import (
     BodySizeLimitMiddleware,
     RequestContextMiddleware,
@@ -54,6 +55,8 @@ row-level security -- not application code -- is the authority on what each call
 * **Collections** -- return `{"items": [...], "page": {...}}` and accept `limit` / `offset`.
 * **Errors** -- RFC 9457 Problem Details (`application/problem+json`) with a stable `code`.
 * **Correlation** -- send `X-Request-ID` to have it echoed and threaded through server logs.
+* **Idempotency** -- send `Idempotency-Key` on a POST to make retries safe; the original
+  response is replayed and marked with `Idempotent-Replay: true`.
 """
 
 TAGS_METADATA = [
@@ -113,6 +116,7 @@ def create_app() -> FastAPI:
     # log line -- including those from error handling -- carries the request id.
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_upload_bytes)
+    app.add_middleware(IdempotencyMiddleware, enabled=bool(settings.supabase_service_role_key))
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(SlowAPIMiddleware)
     app.add_middleware(

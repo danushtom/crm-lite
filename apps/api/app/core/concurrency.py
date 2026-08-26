@@ -20,7 +20,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, Header, Response
 
-from app.core.errors import APIError, NotFoundError
+from app.core.errors import APIError, ConflictError, NotFoundError
 from app.db.supabase import SupabaseClient
 
 _ETAG_RE = re.compile(r'^(?:W/)?"?(\d+)"?$')
@@ -124,6 +124,58 @@ async def update_guarded(
     # The row exists and no precondition was set, so row-level security filtered the write.
     raise PreconditionFailedError(
         f"You do not have permission to modify this {what.lower()}",
+        code="forbidden",
+        title="Forbidden",
+        status_code=403,
+    )
+
+
+async def soft_delete_guarded(
+    db: SupabaseClient,
+    table: str,
+    *,
+    record_id: str,
+    if_match: int | None | str,
+    what: str,
+    deleted_at: str | None = None,
+) -> None:
+    """Mark a row deleted through the database function for that table.
+
+    Not a PATCH. The SELECT policies hide soft-deleted rows, and PostgREST builds every write
+    with a RETURNING clause -- even for ``return=minimal`` -- so row-level security evaluates
+    the SELECT policy against the row the delete just produced and rejects it with 42501,
+    whoever the caller is. The function does the ownership check explicitly and runs as its
+    definer, which sidesteps the contradiction.
+    """
+    function = f"soft_delete_{table.rstrip('s')}"
+    payload: dict[str, Any] = {"p_id": record_id}
+    if isinstance(if_match, int):
+        payload["p_expected_version"] = if_match
+
+    result = await db.rpc(function, payload)
+    outcome = result.data
+    if isinstance(outcome, list) and outcome:
+        outcome = outcome[0]
+    if not isinstance(outcome, dict):
+        outcome = {"status": "not_found"}
+
+    status_value = outcome.get("status")
+    if status_value == "deleted":
+        return
+    if status_value == "not_found":
+        raise NotFoundError(f"{what} not found")
+    if status_value == "referenced":
+        raise ConflictError(
+            f"{what} is the primary contact on a lead; reassign the lead first"
+        )
+    if status_value == "version_mismatch":
+        raise PreconditionFailedError(
+            f"{what} has been modified since you last read it "
+            f"(current version {outcome.get('current_version')}).",
+            extra={"current_version": outcome.get("current_version")},
+        )
+    raise PreconditionFailedError(
+        f"You do not have permission to delete this {what.lower()}",
         code="forbidden",
         title="Forbidden",
         status_code=403,

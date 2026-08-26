@@ -12,7 +12,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentUserDep, DbDep, NonPartnerDep
-from app.core.concurrency import IfMatchDep, set_etag
+from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.domain.enums import LeadSource, LeadStage, ProjectType
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
@@ -431,3 +431,25 @@ async def create_lead_meeting(
     }
     result = await db.insert("meetings", payload)
     return Meeting.model_validate(result.one("Meeting"))
+
+
+@router.delete(
+    "/{lead_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a lead",
+    description=(
+        "A soft delete. The lead and everything hanging off it -- pursuits, activities, "
+        "tasks, meetings, proposals -- disappear from queries but are retained: a hard "
+        "delete would cascade and erase the deal's entire commercial history."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def delete_lead(lead_id: str, db: DbDep, if_match: IfMatchDep) -> Response:
+    await soft_delete_guarded(
+        db,
+        "leads",
+        record_id=lead_id,
+        if_match=if_match,
+        what="Lead",
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

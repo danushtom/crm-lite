@@ -88,6 +88,12 @@ class FakeDb:
         self.calls.append(("PATCH", table, {"params": params, "payload": payload}))
         return self._resolve(f"PATCH {table}")
 
+    async def update_counting(self, table: str, params: dict[str, str], payload: Any) -> int:
+        self.calls.append(("PATCH", table, {"params": params, "payload": payload}))
+        result = self._resolve(f"PATCH {table}")
+        # Mirrors the real client: the row count, not the rows.
+        return result.count if result.count is not None else len(result.rows)
+
     async def delete(self, table: str, params: dict[str, str]) -> FakeResult:
         self.calls.append(("DELETE", table, {"params": params}))
         return self._resolve(f"DELETE {table}")

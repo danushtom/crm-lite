@@ -7,8 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import DbDep
-from app.core.concurrency import IfMatchDep, set_etag, update_guarded
-from app.core.errors import ConflictError, ForbiddenError
+from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
 from app.schemas.contacts import Contact, ContactCreate, ContactUpdate, ContactWithCompany
@@ -110,24 +109,20 @@ async def update_contact(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a contact",
     description=(
-        "Fails with 409 when a lead still names this contact as its primary contact; "
-        "reassign the lead first."
+        "A soft delete: the row is marked deleted and disappears from every query, but is "
+        "retained for recovery and audit. Fails with 409 when a lead still names this "
+        "contact as its primary contact; reassign the lead first."
     ),
     responses=ERROR_RESPONSES,
 )
-async def delete_contact(contact_id: str, db: DbDep) -> Response:
-    existing = await db.select("contacts", params={"select": "id", "id": f"eq.{contact_id}"})
-    existing.one("Contact")
-
-    referencing = await db.select(
-        "leads",
-        params={"select": "id", "primary_contact_id": f"eq.{contact_id}", "limit": "1"},
+async def delete_contact(contact_id: str, db: DbDep, if_match: IfMatchDep) -> Response:
+    # Existence, permission and the referenced-lead check all happen inside the function,
+    # in one statement, so there is no window between checking and deleting.
+    await soft_delete_guarded(
+        db,
+        "contacts",
+        record_id=contact_id,
+        if_match=if_match,
+        what="Contact",
     )
-    if referencing.first() is not None:
-        raise ConflictError("Contact is the primary contact on a lead; reassign the lead first")
-
-    deleted = await db.delete("contacts", {"id": f"eq.{contact_id}"})
-    if deleted.first() is None:
-        # Visible to SELECT but filtered out of DELETE => the caller lacks the delete grant.
-        raise ForbiddenError("You do not have permission to delete this contact")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
