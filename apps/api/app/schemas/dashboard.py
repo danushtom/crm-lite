@@ -68,3 +68,12 @@ class ServiceInfo(APIModel):
     environment: str
     docs_url: str
     api_versions: list[str]
+
+
+class TrendPoint(APIModel):
+    month: str = Field(description='Calendar month as YYYY-MM.')
+    label: str = Field(description='Short month name for chart axes.')
+    won_value: Money = 0
+    won_count: int = 0
+    opened_value: Money = 0
+    opened_count: int = 0

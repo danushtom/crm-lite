@@ -1,10 +1,11 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { ChevronDown, Download, Search, Share2 } from "lucide-react";
+import { Search } from "lucide-react";
 import { Button, Input } from "@dracara/ui";
 import { useEffect, useState } from "react";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { ExportButton } from "@/components/layout/export-button";
 
 const TITLE_MAP: { prefix: string; title: string }[] = [
   { prefix: "/dashboard", title: "Dashboard" },
@@ -53,21 +54,7 @@ export function AppTopBar() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input placeholder="Search something…" className="h-9 rounded-lg border-border bg-muted/30 pl-9 shadow-inner" />
             </div>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5 rounded-lg">
-              <Share2 className="h-3.5 w-3.5" />
-              Share
-            </Button>
-            <Button variant="outline" size="sm" className="h-9 gap-1 rounded-lg px-2">
-              Imports
-              <ChevronDown className="h-4 w-4 opacity-60" />
-            </Button>
-            <Button
-              size="sm"
-              className="h-9 gap-1 rounded-lg bg-[#0A1128] px-3 text-white hover:bg-[#151f3d]"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Exports
-            </Button>
+            <ExportButton />
           </div>
         </div>
       </div>

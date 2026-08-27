@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { OpportunityDrawer } from "@/components/opportunities/opportunity-drawer";
+import { ProposalDrawer } from "@/components/opportunities/proposal-drawer";
 import { 
   FileText, 
   Layers, 

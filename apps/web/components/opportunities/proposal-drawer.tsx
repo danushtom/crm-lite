@@ -2,7 +2,7 @@
 
 import { Button } from "@dracara/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, Trash2 } from "lucide-react";
+import { FileText, Paperclip, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
@@ -63,9 +63,11 @@ export function ProposalDrawer({
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Form>(EMPTY);
+  const [file, setFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setFile(null);
     setForm(
       proposal
         ? {
@@ -103,6 +105,17 @@ export function ProposalDrawer({
         change_notes: form.change_notes,
       });
       if (!editing) {
+        if (file) {
+          // The upload endpoint stores the document and records the version in one call, so
+          // a failed upload cannot leave a proposal row pointing at nothing.
+          const data = new FormData();
+          data.append("file", file);
+          data.append("title", form.title.trim());
+          return apiFetch(`/opportunities/${opportunityId}/proposals/upload`, {
+            method: "POST",
+            body: data,
+          });
+        }
         // The server allocates the version number.
         return apiFetch(`/opportunities/${opportunityId}/proposals`, {
           method: "POST",
@@ -228,6 +241,27 @@ export function ProposalDrawer({
         value={form.loom_url}
         onChange={(v) => set("loom_url", v)}
       />
+      {!editing ? (
+        <div className="space-y-2">
+          <label htmlFor="proposal-file" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Document
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="proposal-file"
+              type="file"
+              accept=".pdf,.doc,.docx,.ppt,.pptx,image/*"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-semibold hover:file:bg-muted/70"
+            />
+            {file ? <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" /> : null}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Optional. Attaching one stores it and records this version in a single step.
+          </p>
+        </div>
+      ) : null}
+
       <TextField
         id="proposal-notes"
         label="What changed"

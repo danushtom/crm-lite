@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.api.deps import CurrentUserDep, DbDep, ProfileDep
 from app.schemas.common import AUTH_RESPONSES
-from app.schemas.dashboard import DashboardMetrics
+from app.schemas.dashboard import DashboardMetrics, TrendPoint
 from app.schemas.tasks import FollowUpQueues, Task
 
 logger = logging.getLogger(__name__)
@@ -108,3 +108,25 @@ async def get_follow_ups(db: DbDep, user: CurrentUserDep, profile: ProfileDep) -
         upcoming=[Task.model_validate(t) for t in upcoming],
         timezone=tz_name,
     )
+
+
+@router.get(
+    "/trend",
+    response_model=list[TrendPoint],
+    summary="Monthly won and opened value",
+    description=(
+        "What actually happened, month by month. The dashboard previously drew this from a "
+        "formula over the current pipeline total, which moved plausibly but described nothing. "
+        "Won dates come from the audit log where it has them."
+    ),
+    responses=AUTH_RESPONSES,
+)
+async def get_trend(
+    db: DbDep,
+    months: Annotated[int, Query(ge=1, le=24, description="How many months to include.")] = 6,
+) -> list[TrendPoint]:
+    result = await db.rpc("pipeline_trend", {"months": months})
+    data = result.data
+    if isinstance(data, list) and data and isinstance(data[0], dict) and "pipeline_trend" in data[0]:
+        data = data[0]["pipeline_trend"]
+    return [TrendPoint.model_validate(p) for p in (data or [])]

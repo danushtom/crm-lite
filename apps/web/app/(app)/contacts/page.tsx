@@ -206,15 +206,22 @@ export default function ContactsPage() {
   };
 
   const summary = useMemo(() => {
-    const campaigns = [
-      { name: "Events", pct: 15, value: 640 },
-      { name: "Micro KOL", pct: 20, value: 480 },
-      { name: "Meta Ads", pct: 23, value: 456 },
-      { name: "Referral", pct: 42, value: 235, mostEffective: true },
-    ];
+    // Where these contacts came from, from the contacts themselves. These four rows were
+    // hardcoded constants -- the same numbers regardless of the data.
+    const bySource = new Map<string, number>();
+    for (const c of rows) {
+      const key = c.source ? c.source.replace(/_/g, " ") : "unspecified";
+      bySource.set(key, (bySource.get(key) ?? 0) + 1);
+    }
+    const total = rows.length || 1;
+    const campaigns = [...bySource.entries()]
+      .map(([name, value]) => ({ name, value, pct: Math.round((value / total) * 100) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 4)
+      .map((c, i) => ({ ...c, mostEffective: i === 0 }));
 
     return {
-      average: 462.72,
+      average: rows.length,
       campaigns,
     };
   }, []);

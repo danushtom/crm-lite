@@ -115,6 +115,7 @@ export default function CompaniesPage() {
         contactName: primary?.full_name ?? "No contact",
         contactRole: primary?.role ?? "Unassigned",
         contactsCount: companyContacts.length,
+        industry: company.industry,
       };
     });
   }, [companies, contacts, leads]);
@@ -126,13 +127,20 @@ export default function CompaniesPage() {
     const wonCount = rows.filter((r) => r.stage === "Won").length;
     const lostCount = rows.filter((r) => r.stage === "Lost").length;
 
-    const campaignSeed = Math.max(1, rows.length);
-    const campaigns = [
-      { name: "Events", pct: 15 + (summaryHash(rows, 2) % 8), value: 320 + campaignSeed * 12 },
-      { name: "Micro KOL", pct: 20 + (summaryHash(rows, 3) % 9), value: 360 + campaignSeed * 14 },
-      { name: "Meta Ads", pct: 23 + (summaryHash(rows, 5) % 10), value: 410 + campaignSeed * 16 },
-      { name: "Referral", pct: 42, value: 220 + campaignSeed * 8, mostEffective: true },
-    ];
+    // Real distribution across the companies in view. These four figures used to be
+    // generated from a hash of the row count, which made them stable enough to look like
+    // data and meant nothing at all.
+    const byIndustry = new Map<string, number>();
+    for (const row of rows) {
+      const key = row.industry?.trim() || "Unspecified";
+      byIndustry.set(key, (byIndustry.get(key) ?? 0) + row.value);
+    }
+    const industryTotal = [...byIndustry.values()].reduce((a, b) => a + b, 0) || 1;
+    const campaigns = [...byIndustry.entries()]
+      .map(([name, value]) => ({ name, value, pct: Math.round((value / industryTotal) * 100) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 4)
+      .map((c, i) => ({ ...c, mostEffective: i === 0 }));
 
     return {
       average,

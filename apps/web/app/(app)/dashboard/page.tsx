@@ -32,6 +32,15 @@ type DashboardPayload = {
   win_loss_ratio_30d?: { wins: number; losses: number };
 };
 
+type TrendPoint = {
+  month: string;
+  label: string;
+  won_value: number;
+  won_count: number;
+  opened_value: number;
+  opened_count: number;
+};
+
 type LeadWithCo = LeadWithOpportunities & {
   companies?: { name?: string; segment?: string | null } | null;
 };
@@ -115,14 +124,18 @@ export default function DashboardPage() {
   const marginPct =
     pipeline > 0 ? Math.round(((weighted / pipeline) * 1000) / 10) : 0;
 
-  const revenueSeries = useMemo(() => {
-    const months = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const base = pipeline > 0 ? pipeline / 6 : 120000;
-    return months.map((m, i) => ({
-      m,
-      v: Math.round(base * (0.65 + i * 0.06) + (i % 3) * base * 0.08),
-    }));
-  }, [pipeline]);
+  // Real monthly history. This used to be generated from pipeline_total by a formula, so it
+  // moved plausibly while describing nothing that had actually happened.
+  const { data: trend = [] } = useQuery({
+    queryKey: ["dashboard", "trend"],
+    queryFn: () => apiFetch<TrendPoint[]>("/dashboard/trend?months=6"),
+  });
+
+  const revenueSeries = useMemo(
+    () => trend.map((t) => ({ m: t.label, v: Number(t.won_value), opened: Number(t.opened_value) })),
+    [trend]
+  );
+  const hasTrendData = revenueSeries.some((p) => p.v > 0 || p.opened > 0);
 
   return (
     <div className="space-y-5">
@@ -193,12 +206,16 @@ export default function DashboardPage() {
                   tick={{ fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v) => `$${(Number(v) / 1000).toFixed(0)}k`}
+                  tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`}
                 />
                 <Tooltip
-                  formatter={(v: number) => [`$${v.toLocaleString()}`, "Amount"]}
+                  formatter={(v: number, name) => [
+                    v.toLocaleString(),
+                    name === "v" ? "Won" : "Opened",
+                  ]}
                   contentStyle={{ borderRadius: "12px", border: "1px solid hsl(var(--border))" }}
                 />
+                <Area type="monotone" dataKey="opened" stroke="#94a3b8" strokeWidth={1.5} fill="none" strokeDasharray="4 3" />
                 <Area type="monotone" dataKey="v" stroke="#2563eb" strokeWidth={2} fill="url(#revFill)" />
               </AreaChart>
             </ResponsiveContainer>

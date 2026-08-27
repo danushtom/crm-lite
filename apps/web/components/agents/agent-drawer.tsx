@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@dracara/ui";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, UserCog } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -98,6 +98,22 @@ export function AgentDrawer({ agent }: { agent: AgentSummary }) {
     },
   });
 
+  // GET /agents/{id}/performance has existed unused since the API was built; tdd.md 13.2
+  // specifies this table. Fetched only while the drawer is open, so the roster listing does
+  // not turn into one request per person.
+  const { data: performance } = useQuery({
+    queryKey: ["agent-performance", agent.id],
+    queryFn: () =>
+      apiFetch<{
+        assigned_leads: number;
+        stage_moves_logged: number;
+        meetings_count: number;
+        wins: number;
+        win_rate: number;
+      }>(`/agents/${agent.id}/performance`),
+    enabled: open,
+  });
+
   const roleChanged = form.role !== agent.role;
   const accessChanged = form.is_active !== String(agent.is_active);
 
@@ -161,10 +177,43 @@ export function AgentDrawer({ agent }: { agent: AgentSummary }) {
         hint="Decides when their follow-up queue rolls over to the next day."
       />
 
+      <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+          Performance
+        </p>
+        {performance ? (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+            <Stat label="Leads owned" value={performance.assigned_leads} />
+            <Stat label="Won" value={performance.wins} />
+            <Stat label="Meetings" value={performance.meetings_count} />
+            <Stat label="Stage moves" value={performance.stage_moves_logged} />
+            <Stat
+              label="Win rate"
+              value={
+                performance.assigned_leads === 0
+                  ? "—"
+                  : `${Math.round(performance.win_rate * 100)}%`
+              }
+            />
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        )}
+      </div>
+
       <p className="text-xs text-muted-foreground">
         The last active admin cannot be demoted or have access revoked — otherwise nobody
         could administer the workspace.
       </p>
     </EntityDrawer>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="font-semibold tabular-nums">{value}</span>
+    </div>
   );
 }

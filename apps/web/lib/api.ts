@@ -100,7 +100,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   } = await supabase.auth.getSession();
 
   const headers = new Headers(init.headers);
-  if (!headers.has("Content-Type") && init.body) {
+  // The browser must set Content-Type for multipart bodies: it has to append the boundary,
+  // which we cannot know. Forcing application/json here silently breaks every file upload.
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
+  if (!headers.has("Content-Type") && init.body && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
   if (session?.access_token) {
