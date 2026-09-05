@@ -1779,5 +1779,58 @@ An automated morning email and dashboard digest summarising the founder's most u
 
 
 
+23. Changelog Since v1.0
+This document was frozen at v1.0 scope: single-tenant, four fixed roles, zero AI. Everything below has shipped since, grouped by theme rather than commit. Where a change makes an earlier section inaccurate, that section is called out explicitly in §23.5 rather than silently rewritten — treat the codebase, not this document, as the source of truth for anything flagged stale there.
+
+23.1 Platform hardening (pre-multi-tenancy)
+Change
+Summary
+API layering & versioning
+Backend restructured into a layered architecture; every route moved under /api/v1, with rate limiting, structured Problem Details errors, and security headers added.
+Test coverage expansion
+Backend suite grew from 7 tests to 110+, and now 201 as of the AI voice agents feature (23.4).
+Data integrity fixes
+RLS policy repairs, contact-visibility fixes, a NOT NULL trigger violation fix, currency correctness, stable pagination, timezone-correct scheduling.
+Optimistic concurrency + audit trail
+Every mutable row carries a version column; writes are conditional via If-Match/ETag; a new audit_log table records who changed what.
+Idempotent creates & recoverable deletes
+Idempotency-Key support on POST; every delete across leads/contacts/companies/opportunities is a soft delete (recoverable), not a hard delete.
+Leads/opportunities single-owner-per-fact refactor
+leads and opportunities were split so each fact (qualification data vs. pursuit data) has exactly one owner table — superseding §10.2's leads schema, which still shows stage, estimated_value and is_opportunity as columns directly on leads.
+Full CRUD coverage
+Create/edit/delete drawers built out across every resource page; the dashboard now reads real aggregated queries instead of placeholder data.
+
+23.2 Multi-tenant organizations
+Dracara Growth OS is no longer single-tenant. A new organizations table roots every tenant-owned row (organization_id on every table, auto-populated by database triggers — never client-supplied), with self-serve signup (an unrecognized signup mints a brand-new organization) and an invite-token flow (org_invites: single-use, expiring, email-pinned) for adding teammates to an existing one. This makes §16 (Authentication & Security) and the single-workspace assumption running through Part 1 incomplete: every permission and RLS rule described there now also carries an implicit "...within your own organization" boundary.
+
+23.3 Dynamic, admin-configurable RBAC
+§10.2's users.role enum (admin | agent | sdr | partner) and §16.2's fixed RBAC matrix are both superseded. Roles are no longer a fixed enum — they are organization-owned data in a new roles table (a name, a grants_full_access flag replacing the old binary "is admin", and a checklist of granted permissions from a permissions catalog). An admin can rename, edit, delete, or create roles and assign granular permissions (e.g. leads.write, voice_agents.manage) to them from the "User management" screen. The four original roles still exist as the seeded defaults for every new organization, but they are now a starting point, not a hard ceiling. Row-level visibility is unchanged by this — still: own your records, or hold a role with grants_full_access; permissions are feature gates layered on top of that, not a replacement for it.
+
+23.4 AI voice sales agents (first AI feature; partially overlaps §20's Phase 2 AI roadmap)
+An organization admin can create an AI voice agent — a system prompt, a phone number, and supporting documents (upload works; wiring the uploaded documents into the agent's live knowledge does not yet) — that places outbound calls and answers inbound calls via Twilio plus a managed voice-AI platform (Vapi). Mid-call, the agent can call back into the CRM through a tool-calling bridge: check a contact's consent, pull a lead's context, log a call outcome, update a deal's stage, or book a meeting. Every call is logged to a new calls table and summarized onto the lead's activity timeline; the owning rep is notified through the existing notification system when a call completes.
+
+This is not the Phase 2 roadmap as originally scoped in §20 — there is no AI call-note extraction, no AI proposal drafting, no ML-based lead scoring, and no WhatsApp/email sync. It is a separate capability (AI-driven calling) that §20 did not anticipate.
+
+Compliance is built into the schema, not left to policy: an outbound call is blocked unless that specific contact has an explicit consent flag set (the block itself is logged, not silently dropped), a fixed recording-disclosure line plays at the start of every call regardless of what the admin's prompt says, and the whole feature is gated behind a one-time, org-wide compliance acknowledgment.
+
+No vector database is in use. The agent's mid-call knowledge comes entirely from live tool-calls into Postgres — the same data every other screen reads — not a vector index or embeddings store.
+
+23.5 What in this document is now stale
+Section
+Why it's stale
+§10.2, users table
+role ENUM no longer exists; replaced by role_id → roles table (§23.3).
+§11, RLS Policies table
+Every role = 'admin' check shown here has been replaced by a roles.grants_full_access join; every policy also gained an organization-scoping clause not shown here (§23.2).
+§16.2, RBAC Matrix
+Describes four fixed roles with fixed permissions; roles and their permissions are now organization-configurable data (§23.3).
+§12.1, Router Structure
+Predates /api/v1 versioning and every endpoint added since — roles, permissions, organizations, voice agents, voice webhooks. Treat as illustrative, not current.
+§20, Phase 2 AI Roadmap
+None of the six listed features have shipped; what has shipped (§23.4) is a different AI capability this roadmap didn't include.
+Part 1, "the founder" / single workspace
+The product now supports any number of independent organizations, each with their own founder/admin (§23.2).
+
+
 Document End — Dracara Growth OS v1.0 BRD + TDD
 dracara.dev  |  Confidential  |  Not for distribution
