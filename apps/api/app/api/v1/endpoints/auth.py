@@ -77,6 +77,7 @@ async def read_current_user(profile: ProfileDep, user: CurrentUserDep) -> Curren
 @limiter.limit("10/minute")
 async def google_callback(
     request: Request,
+    response: Response,
     body: GoogleOAuthExchange,
     user: CurrentUserDep,
     _db: DbDep,

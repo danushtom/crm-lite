@@ -66,6 +66,7 @@ async def list_agents(db: DbDep, page: PageParamsDep, _admin: AdminDep) -> Page[
 @limiter.limit("10/minute")
 async def invite_agent(
     request: Request,
+    response: Response,
     body: AgentInvite,
     admin_db: AdminDbDep,
     _admin: AdminDep,
