@@ -72,6 +72,8 @@ TAGS_METADATA = [
     {"name": "Notifications", "description": "In-app notification inbox."},
     {"name": "Roles", "description": "Organization-owned roles and their permission grants."},
     {"name": "Agents", "description": "Team management and performance. Admin only."},
+    {"name": "Voice Agents", "description": "AI voice agents that place and receive phone calls. Not to be confused with 'Agents' (team members)."},
+    {"name": "Voice Webhooks", "description": "Callbacks from the voice platform (call lifecycle, tool-calling). Signature-verified, not JWT-authenticated."},
 ]
 
 

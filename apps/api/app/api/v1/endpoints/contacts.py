@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 
-from app.api.deps import DbDep
+from app.api.deps import CurrentUserDep, DbDep
 from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
@@ -86,17 +87,26 @@ async def update_contact(
     contact_id: str,
     body: ContactUpdate,
     db: DbDep,
+    user: CurrentUserDep,
     response: Response,
     if_match: IfMatchDep,
 ) -> Contact:
     changes = body.changes()
     if not changes:
         return await get_contact(contact_id, db, response)
+    validated = ContactUpdate.model_validate(changes).model_dump(exclude_unset=True, mode="json")
+    # Stamped server-side, never client-supplied -- see ContactUpdate's comment.
+    if validated.get("ai_call_consent") is True:
+        validated["ai_call_consent_at"] = datetime.now(timezone.utc).isoformat()
+        validated["ai_call_consent_recorded_by"] = user.sub
+    elif validated.get("ai_call_consent") is False:
+        validated["ai_call_consent_at"] = None
+        validated["ai_call_consent_recorded_by"] = None
     row = await update_guarded(
         db,
         "contacts",
         record_id=contact_id,
-        changes=ContactUpdate.model_validate(changes).model_dump(exclude_unset=True, mode="json"),
+        changes=validated,
         if_match=if_match,
         what="Contact",
     )

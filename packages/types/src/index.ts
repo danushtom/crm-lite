@@ -9,6 +9,55 @@ export interface Role {
   user_count: number;
 }
 
+export type VoiceAgentDirection = "inbound" | "outbound" | "both";
+export type CallDirection = "inbound" | "outbound";
+export type CallStatus = "queued" | "ringing" | "in_progress" | "completed" | "failed" | "no_consent_blocked";
+
+export interface VoiceAgent {
+  id: string;
+  name: string;
+  system_prompt: string;
+  direction: VoiceAgentDirection;
+  voice_id: string | null;
+  platform: string;
+  platform_assistant_id: string | null;
+  phone_number_id: string | null;
+  disclosure_script: string;
+  is_active: boolean;
+  version: number;
+}
+
+export interface PhoneNumber {
+  id: string;
+  e164_number: string;
+  provider: string;
+  provider_number_sid: string | null;
+  assigned_voice_agent_id: string | null;
+}
+
+export interface CallSummary {
+  id: string;
+  voice_agent_id: string;
+  contact_id: string | null;
+  lead_id: string | null;
+  direction: CallDirection;
+  status: CallStatus;
+  to_number: string;
+  from_number: string;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  outcome: string | null;
+  created_at: string | null;
+}
+
+export interface Call extends CallSummary {
+  recording_url: string | null;
+  transcript: string | null;
+  summary: string | null;
+  suggested_next_action: string | null;
+}
+
 export type LeadStage =
   | "prospect"
   | "contacting"
@@ -74,6 +123,8 @@ export interface ContactRow {
   version: number;
   /** Set when soft-deleted; such rows are hidden from every query. */
   deleted_at?: string | null;
+  /** Required before a voice agent may place an outbound AI call to this contact. */
+  ai_call_consent: boolean;
 }
 
 /**

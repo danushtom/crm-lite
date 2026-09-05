@@ -115,10 +115,18 @@ def test_user() -> TokenUser:
 
 @pytest.fixture
 def authed_client(app, fake_db, test_user) -> Iterator[TestClient]:
-    """Client with auth and the database dependency replaced by in-memory fakes."""
+    """Client with auth and the database dependency replaced by in-memory fakes.
+
+    ``get_admin_db`` shares the same fake as ``get_db`` -- good enough for testing the shape of
+    what a service-role code path writes/reads, without a real SupabaseAdminClient touching the
+    network. Endpoints that construct ``SupabaseAdminClient()`` directly (bypassing the
+    dependency) are unaffected by this and need their own httpx-level mocking instead -- see
+    test_auth_endpoints.py's FakeHttpClient for that pattern.
+    """
     app.dependency_overrides[deps.get_current_user] = lambda: test_user
     app.dependency_overrides[deps.get_access_token] = lambda: "test-token"
     app.dependency_overrides[deps.get_db] = lambda: fake_db
+    app.dependency_overrides[deps.get_admin_db] = lambda: fake_db
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

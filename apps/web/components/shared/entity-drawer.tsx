@@ -91,6 +91,41 @@ export function TextField({
   );
 }
 
+export function TextareaField({
+  label,
+  id,
+  value,
+  onChange,
+  required,
+  hint,
+  error,
+  rows = 6,
+  ...rest
+}: {
+  label: string;
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+  hint?: string;
+  error?: string | null;
+  rows?: number;
+} & Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange" | "id" | "rows">) {
+  return (
+    <Field label={label} htmlFor={id} required={required} hint={hint} error={error}>
+      <textarea
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={rows}
+        aria-invalid={Boolean(error)}
+        className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        {...rest}
+      />
+    </Field>
+  );
+}
+
 export function SelectField<T extends string>({
   label,
   id,

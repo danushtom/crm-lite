@@ -48,6 +48,24 @@ class Settings(BaseSettings):
     proposals_bucket: str = Field(default="proposals", validation_alias="PROPOSALS_BUCKET")
     max_upload_bytes: int = Field(default=50 * 1024 * 1024, validation_alias="MAX_UPLOAD_BYTES")
 
+    # --- Voice agents (Twilio + a managed voice-AI platform) ---------------
+    voice_kb_bucket: str = Field(default="voice-agent-docs", validation_alias="VOICE_KB_BUCKET")
+    voice_platform: str = Field(default="vapi", validation_alias="VOICE_PLATFORM")
+    voice_platform_api_key: str = Field(default="", validation_alias="VOICE_PLATFORM_API_KEY")
+    voice_platform_api_base: str = Field(
+        default="https://api.vapi.ai", validation_alias="VOICE_PLATFORM_API_BASE"
+    )
+    voice_platform_webhook_secret: str = Field(
+        default="", validation_alias="VOICE_PLATFORM_WEBHOOK_SECRET"
+    )
+    twilio_account_sid: str = Field(default="", validation_alias="TWILIO_ACCOUNT_SID")
+    twilio_auth_token: str = Field(default="", validation_alias="TWILIO_AUTH_TOKEN")
+    #: Publicly reachable base URL for this API (e.g. an ngrok tunnel in dev, the real domain
+    #: in production) -- used to build the webhook URL handed to the voice platform. Calls and
+    #: assistant creation fail loudly via NotConfiguredError-style checks if this is unset and
+    #: a webhook URL is actually needed.
+    api_public_base_url: str = Field(default="", validation_alias="API_PUBLIC_BASE_URL")
+
     @property
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}

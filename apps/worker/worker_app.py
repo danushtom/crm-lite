@@ -26,6 +26,10 @@ app.conf.beat_schedule = {
     "post-meeting-prompt": {"task": "worker_app.post_meeting_prompt", "schedule": crontab(minute="*/5")},
     "overdue-escalation": {"task": "worker_app.overdue_escalation", "schedule": crontab(minute=0, hour=9)},
     "daily-brief": {"task": "worker_app.daily_brief", "schedule": crontab(minute=0, hour=8)},
+    "stale-call-reconciliation": {
+        "task": "worker_app.stale_call_reconciliation",
+        "schedule": crontab(minute="*/10"),
+    },
 }
 
 
@@ -393,3 +397,34 @@ def daily_brief() -> str:
         log.warning("Resend failed: %s", e)
         return f"fail:{e}"
     return "sent"
+
+
+@app.task(name="worker_app.stale_call_reconciliation")
+def stale_call_reconciliation() -> str:
+    """Safety net for a lost webhook: an AI call that never received a terminal status update
+    from the voice platform would otherwise stay 'in_progress' forever. A real call lasts
+    minutes, not an hour, so a one-hour timeout is generous rather than a live platform status
+    check -- simpler, and avoids duplicating the API's voice_platform adapter into the worker.
+    """
+    sb = _sb()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    stale = sb.request(
+        "GET",
+        "/calls",
+        params={
+            "select": "id",
+            "status": "in.(queued,ringing,in_progress)",
+            "created_at": f"lt.{cutoff}",
+            "limit": "500",
+        },
+    )
+    rows = stale or []
+    for row in rows:
+        sb.request(
+            "PATCH",
+            "/calls",
+            params={"id": f"eq.{row['id']}"},
+            json_body={"status": "failed", "outcome": "reconciled: no terminal status received"},
+            prefer="return=minimal",
+        )
+    return f"reconciled:{len(rows)}"

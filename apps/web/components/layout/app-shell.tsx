@@ -21,6 +21,7 @@ import {
   Search,
   Users,
   Target,
+  PhoneCall,
 } from "lucide-react";
 import { Button, cn, Input } from "@dracara/ui";
 import { createClient } from "@/lib/supabase/client";
@@ -38,6 +39,7 @@ const nav = [
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/agents", label: "Agents", icon: Users },
+  { href: "/voice-agents", label: "AI Agents", icon: PhoneCall },
 ];
 
 export function AppShell({

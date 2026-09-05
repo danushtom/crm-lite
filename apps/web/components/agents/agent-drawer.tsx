@@ -208,7 +208,7 @@ export function AgentDrawer({ agent }: { agent: AgentSummary }) {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        The organization's last full-access user cannot be demoted or have access revoked —
+        The organization&apos;s last full-access user cannot be demoted or have access revoked —
         otherwise nobody could administer the workspace.
       </p>
     </EntityDrawer>

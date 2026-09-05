@@ -31,6 +31,11 @@ class ContactUpdate(PatchModel):
     avatar_url: str | None = Field(default=None, max_length=1000)
     source: LeadSource | None = None
     is_primary: bool | None = None
+    # Deliberately no ai_call_consent_at/_recorded_by here -- those are stamped server-side
+    # (see update_contact()) when this flips true, never client-supplied.
+    ai_call_consent: bool | None = Field(
+        default=None, description="Required before a voice agent may place an outbound AI call to this contact."
+    )
 
 
 class CompanyRef(APIModel):
@@ -50,6 +55,7 @@ class Contact(APIModel):
     avatar_url: str | None = None
     source: LeadSource | None = None
     is_primary: bool = False
+    ai_call_consent: bool = False
     created_at: datetime | None = None
     version: int = Field(
         default=1,

@@ -46,9 +46,13 @@ export function ContactDrawer({ contact }: { contact?: ContactRow }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Form>(contact ? toForm(contact) : EMPTY);
+  const [aiCallConsent, setAiCallConsent] = useState(contact?.ai_call_consent ?? false);
 
   useEffect(() => {
-    if (open && contact) setForm(toForm(contact));
+    if (open && contact) {
+      setForm(toForm(contact));
+      setAiCallConsent(contact.ai_call_consent ?? false);
+    }
   }, [open, contact]);
 
   const set = <K extends keyof Form>(key: K, value: string) =>
@@ -78,6 +82,12 @@ export function ContactDrawer({ contact }: { contact?: ContactRow }) {
       // company_id is fixed once a contact exists; moving someone between companies would
       // silently rewrite which leads can see them.
       const { company_id: _ignored, ...editable } = payload;
+      // Only sent when actually toggled -- otherwise an unrelated edit (e.g. a role change)
+      // would re-stamp the consent timestamp/recorder every time, implying re-consent that
+      // never happened.
+      if (aiCallConsent !== (contact!.ai_call_consent ?? false)) {
+        (editable as Record<string, unknown>).ai_call_consent = aiCallConsent;
+      }
       return apiFetch<ContactRow>(`/contacts/${contact!.id}`, {
         method: "PATCH",
         headers: { "If-Match": `"${contact!.version}"` },
@@ -218,6 +228,23 @@ export function ContactDrawer({ contact }: { contact?: ContactRow }) {
         value={form.linkedin_url}
         onChange={(v) => set("linkedin_url", v)}
       />
+
+      {editing ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={aiCallConsent}
+            onChange={(e) => setAiCallConsent(e.target.checked)}
+          />
+          <span>
+            <span className="font-medium">Consented to AI calls.</span>{" "}
+            <span className="text-muted-foreground">
+              Required before a voice agent may place an outbound call to this contact.
+            </span>
+          </span>
+        </label>
+      ) : null}
     </EntityDrawer>
   );
 }

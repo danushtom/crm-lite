@@ -108,6 +108,26 @@ class ProposalStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class VoiceAgentDirection(StrEnum):
+    INBOUND = "inbound"
+    OUTBOUND = "outbound"
+    BOTH = "both"
+
+
+class CallDirection(StrEnum):
+    INBOUND = "inbound"
+    OUTBOUND = "outbound"
+
+
+class CallStatus(StrEnum):
+    QUEUED = "queued"
+    RINGING = "ringing"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    NO_CONSENT_BLOCKED = "no_consent_blocked"
+
+
 #: Outcomes that should automatically schedule a follow-up task (tdd.md 14.2).
 OUTCOMES_REQUIRING_FOLLOWUP = frozenset({MeetingOutcome.NEEDS_PROPOSAL, MeetingOutcome.FOLLOWUP_LATER})
 

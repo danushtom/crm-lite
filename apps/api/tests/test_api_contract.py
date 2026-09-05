@@ -12,6 +12,11 @@ from app.core.config import API_V1_PREFIX
 
 UNVERSIONED_ALLOWED = {"/", "/health", "/health/live", "/health/ready"}
 
+#: Versioned routes deliberately authenticated by something other than a Supabase bearer
+#: token -- the voice platform's webhook callbacks, verified by HMAC signature instead (see
+#: app/core/webhook_security.py). A logged-in user never calls these directly.
+SIGNATURE_VERIFIED_ALLOWED = {f"{API_V1_PREFIX}/voice-webhooks/platform/events"}
+
 
 def test_service_root_advertises_versions(client):
     body = client.get("/").json()
@@ -77,7 +82,7 @@ def test_protected_routes_declare_security(client):
     spec = client.get("/openapi.json").json()
     unsecured = []
     for path, operations in spec["paths"].items():
-        if path in UNVERSIONED_ALLOWED:
+        if path in UNVERSIONED_ALLOWED or path in SIGNATURE_VERIFIED_ALLOWED:
             continue
         for method, operation in operations.items():
             if method not in {"get", "post", "patch", "put", "delete"}:

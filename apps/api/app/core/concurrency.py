@@ -36,6 +36,7 @@ ANY_VERSION = "*"
 _REFERENCED_DETAIL = {
     "contacts": "This contact is the primary contact on a lead; reassign the lead first.",
     "companies": "This company still has active leads; delete or reassign them first.",
+    "voice_agents": "This agent has a call in progress; wait for it to finish first.",
 }
 
 _SOFT_DELETE_FUNCTIONS = {
@@ -43,6 +44,7 @@ _SOFT_DELETE_FUNCTIONS = {
     "contacts": "soft_delete_contact",
     "companies": "soft_delete_company",
     "opportunities": "soft_delete_opportunity",
+    "voice_agents": "soft_delete_voice_agent",
 }
 
 
