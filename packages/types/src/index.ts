@@ -1,6 +1,13 @@
 /** Shared domain types — mirrors Supabase schema / API contracts */
 
-export type UserRole = "admin" | "agent" | "sdr" | "partner";
+export interface Role {
+  id: string;
+  name: string;
+  grants_full_access: boolean;
+  is_system: boolean;
+  permissions: string[];
+  user_count: number;
+}
 
 export type LeadStage =
   | "prospect"
@@ -23,7 +30,8 @@ export interface UserRow {
   id: string;
   email: string;
   full_name: string;
-  role: UserRole;
+  role_id: string;
+  role_name: string;
   avatar_url: string | null;
   is_active: boolean;
   created_at: string;

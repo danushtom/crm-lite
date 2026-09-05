@@ -13,13 +13,6 @@ from __future__ import annotations
 from enum import StrEnum
 
 
-class UserRole(StrEnum):
-    ADMIN = "admin"
-    AGENT = "agent"
-    SDR = "sdr"
-    PARTNER = "partner"
-
-
 class LeadStage(StrEnum):
     PROSPECT = "prospect"
     CONTACTING = "contacting"

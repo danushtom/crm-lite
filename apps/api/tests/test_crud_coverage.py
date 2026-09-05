@@ -34,20 +34,26 @@ MEETING = {
     "version": 1,
 }
 
+ADMIN_ROLE = {"id": "role-admin-1", "name": "Admin", "grants_full_access": True, "role_permissions": []}
+AGENT_ROLE = {"id": "role-agent-1", "name": "Agent", "grants_full_access": False, "role_permissions": []}
+SDR_ROLE = {"id": "role-sdr-1", "name": "SDR", "grants_full_access": False, "role_permissions": []}
+
 AGENT = {
     "id": "agent-1",
     "email": "agent@example.com",
     "full_name": "Sam Agent",
-    "role": "agent",
+    "role_id": AGENT_ROLE["id"],
+    "role_name": AGENT_ROLE["name"],
+    "roles": AGENT_ROLE,
     "is_active": True,
     "version": 1,
 }
 
 
 def as_admin(fake_db, test_user):
-    """The role gate reads the caller's profile row."""
+    """The role gate reads the caller's profile row, with the role embedded."""
     fake_db.responses["GET users"] = FakeResult(
-        [{"id": test_user.sub, "role": "admin", "is_active": True}]
+        [{"id": test_user.sub, "role_id": ADMIN_ROLE["id"], "is_active": True, "roles": ADMIN_ROLE}]
     )
 
 
@@ -167,20 +173,22 @@ def test_a_company_with_live_leads_cannot_be_deleted(authed_client, fake_db):
 
 def test_an_admin_can_change_a_role(authed_client, fake_db, test_user):
     as_admin(fake_db, test_user)
-    fake_db.responses["PATCH users"] = FakeResult({**AGENT, "role": "sdr"})
+    fake_db.responses["PATCH users"] = FakeResult(
+        {**AGENT, "role_id": SDR_ROLE["id"], "role_name": SDR_ROLE["name"], "roles": SDR_ROLE}
+    )
 
-    response = authed_client.patch(f"{V1}/agents/agent-1", json={"role": "sdr"})
+    response = authed_client.patch(f"{V1}/agents/agent-1", json={"role_id": SDR_ROLE["id"]})
 
     assert response.status_code == 200
-    assert response.json()["role"] == "sdr"
+    assert response.json()["role_name"] == "SDR"
 
 
 def test_a_non_admin_cannot_change_a_role(authed_client, fake_db, test_user):
     fake_db.responses["GET users"] = FakeResult(
-        [{"id": test_user.sub, "role": "agent", "is_active": True}]
+        [{"id": test_user.sub, "role_id": AGENT_ROLE["id"], "is_active": True, "roles": AGENT_ROLE}]
     )
 
-    response = authed_client.patch(f"{V1}/agents/agent-1", json={"role": "admin"})
+    response = authed_client.patch(f"{V1}/agents/agent-1", json={"role_id": ADMIN_ROLE["id"]})
 
     assert response.status_code == 403
 

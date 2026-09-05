@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.deps import CurrentUserDep, DbDep, NonPartnerDep
+from app.api.deps import CurrentUserDep, DbDep, require_permission
 from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.domain.enums import LeadSource, LeadStage, ProjectType
@@ -275,7 +275,7 @@ async def update_intelligence(
     db: DbDep,
     response: Response,
     user: CurrentUserDep,
-    _guard: NonPartnerDep,
+    _guard: Annotated[dict, Depends(require_permission("lead_intelligence.write"))],
 ) -> LeadIntelligence:
     changes = body.changes()
     if not changes:

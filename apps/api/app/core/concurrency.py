@@ -108,13 +108,16 @@ async def update_guarded(
     if_match: int | None | str,
     what: str,
     id_column: str = "id",
+    select: str = "*",
 ) -> dict[str, Any]:
     """Apply an update, honouring If-Match when the caller supplied one.
 
     The conditional write and the version check are the same statement, so there is no window
-    between checking and writing for another client to slip through.
+    between checking and writing for another client to slip through. ``select`` shapes the
+    returned representation (e.g. to embed a relationship) -- pass it when the caller needs
+    more than the bare row, instead of re-fetching afterwards.
     """
-    params = {id_column: f"eq.{record_id}"}
+    params = {id_column: f"eq.{record_id}", "select": select}
     if isinstance(if_match, int):
         params["version"] = f"eq.{if_match}"
 
@@ -125,7 +128,7 @@ async def update_guarded(
 
     # Zero rows updated. Distinguish "gone" from "someone else got there first" so the client
     # knows whether to refetch and retry or to stop.
-    current = await db.select(table, params={"select": "*", id_column: f"eq.{record_id}"})
+    current = await db.select(table, params={"select": select, id_column: f"eq.{record_id}"})
     existing = current.first()
     if existing is None:
         raise NotFoundError(f"{what} not found")

@@ -10,7 +10,7 @@ export default function OpportunityLayout({ children }: { children: React.ReactN
   const { id } = useParams<{ id: string }>();
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6 lg:p-8">
+    <div className="w-full space-y-4 p-4 sm:p-6 lg:p-8">
       <div className="flex items-center gap-2">
         <Link 
           href="/opportunities" 

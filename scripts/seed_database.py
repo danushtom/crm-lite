@@ -13,6 +13,25 @@ Optional:
 Usage:
   cd /path/to/crm-lite && python scripts/seed_database.py
   python scripts/seed_database.py --dry-run   # connectivity + auth create only, skip inserts
+
+Creates two organizations to demonstrate tenant isolation:
+
+  Dracara (dracara.dev)        — the main demo dataset, one user per role
+    danush@dracara.dev   admin
+    arjun@dracara.dev    agent
+    meera@dracara.dev    sdr
+    kabir@dracara.dev    partner
+
+  Acme Corp (acme.corp)        — a second, otherwise-empty tenant
+    priya@acme.corp      admin
+
+All non-founding users (arjun, meera, kabir) join via a redeemed org_invites
+token rather than a post-creation role PATCH: a service-role PATCH that
+changes someone's role is rejected by guard_role_escalation() (it only
+trusts a role change made by an authenticated admin, not a bare service-role
+connection with no auth.uid()), and organization/role are no longer
+something a client can set directly on signup anyway -- see
+supabase/migrations/20260905140000_initial_schema.sql's handle_new_user().
 """
 
 from __future__ import annotations
@@ -29,9 +48,14 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 
-ADMIN_EMAIL = "dracara.seed.admin@example.com"
-AGENT_EMAIL = "dracara.seed.agent@example.com"
-SDR_EMAIL = "dracara.seed.sdr@example.com"
+DRACARA_ORG_NAME = "Dracara"
+ACME_ORG_NAME = "Acme Corp"
+
+ADMIN_EMAIL = "danush@dracara.dev"
+AGENT_EMAIL = "arjun@dracara.dev"
+SDR_EMAIL = "meera@dracara.dev"
+PARTNER_EMAIL = "kabir@dracara.dev"
+ACME_ADMIN_EMAIL = "priya@acme.corp"
 
 
 def load_dotenv_file(path: Path) -> dict[str, str]:
@@ -79,7 +103,7 @@ def wait_public_user(client: httpx.Client, base: str, headers: dict[str, str], u
     for _ in range(retries):
         r = client.get(
             f"{base}/rest/v1/users",
-            params={"select": "id,email,full_name,role", "id": f"eq.{uid}"},
+            params={"select": "id,email,full_name,role,organization_id", "id": f"eq.{uid}"},
             headers=headers,
         )
         r.raise_for_status()
@@ -98,43 +122,6 @@ def auth_admin_headers(service_key: str) -> dict[str, str]:
     }
 
 
-def create_or_get_user(
-    client: httpx.Client,
-    base: str,
-    service_key: str,
-    email: str,
-    password: str,
-    full_name: str,
-) -> str:
-    headers = auth_admin_headers(service_key)
-    payload = {
-        "email": email,
-        "password": password,
-        "email_confirm": True,
-        "user_metadata": {"full_name": full_name},
-    }
-    r = client.post(f"{base}/auth/v1/admin/users", json=payload, headers=headers)
-    if r.status_code in (200, 201):
-        uid = r.json()["id"]
-        print(f"  Created auth user {email} → {uid}")
-        wait_public_user(client, base, headers, uid)
-        return uid
-    err_text = r.text
-    if r.status_code == 422 or "already been registered" in err_text or "already exists" in err_text.lower():
-        hr = client.get(
-            f"{base}/rest/v1/users",
-            params={"select": "id,email", "email": f"eq.{email}"},
-            headers=headers,
-        )
-        hr.raise_for_status()
-        rows = hr.json()
-        if rows:
-            uid = rows[0]["id"]
-            print(f"  Using existing user {email} → {uid}")
-            return uid
-    raise RuntimeError(f"Auth admin create failed ({r.status_code}): {err_text[:800]}")
-
-
 def rest_headers(service_key: str) -> dict[str, str]:
     return {
         "apikey": service_key,
@@ -142,6 +129,79 @@ def rest_headers(service_key: str) -> dict[str, str]:
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     }
+
+
+def find_existing_user(client: httpx.Client, base: str, headers: dict[str, str], email: str) -> dict[str, Any] | None:
+    r = client.get(
+        f"{base}/rest/v1/users",
+        params={"select": "id,email,role,organization_id", "email": f"eq.{email}"},
+        headers=headers,
+    )
+    r.raise_for_status()
+    rows = r.json()
+    return rows[0] if rows else None
+
+
+def _create_auth_user(
+    client: httpx.Client, base: str, service_key: str, email: str, password: str, user_metadata: dict[str, Any]
+) -> str:
+    headers = auth_admin_headers(service_key)
+    payload = {
+        "email": email,
+        "password": password,
+        "email_confirm": True,
+        "user_metadata": user_metadata,
+    }
+    r = client.post(f"{base}/auth/v1/admin/users", json=payload, headers=headers)
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"Auth admin create failed for {email} ({r.status_code}): {r.text[:800]}")
+    uid = r.json()["id"]
+    print(f"  Created auth user {email} → {uid}")
+    profile = wait_public_user(client, base, headers, uid)
+    return profile
+
+
+def create_or_get_founder(
+    client: httpx.Client, base: str, service_key: str, email: str, password: str, full_name: str, organization_name: str
+) -> dict[str, Any]:
+    """Create the first (admin) user of a brand-new organization, or return the existing one.
+
+    No invite_token in metadata: handle_new_user() mints a new organization and makes this
+    user its admin.
+    """
+    headers = auth_admin_headers(service_key)
+    existing = find_existing_user(client, base, headers, email)
+    if existing:
+        print(f"  Using existing user {email} → {existing['id']}")
+        return existing
+    return _create_auth_user(
+        client, base, service_key, email, password,
+        {"full_name": full_name, "organization_name": organization_name},
+    )
+
+
+def create_or_get_invited(
+    client: httpx.Client, base: str, service_key: str, email: str, password: str, full_name: str,
+    organization_id: str, role: str, invited_by: str,
+) -> dict[str, Any]:
+    """Create a user who joins an existing organization with a specific role, or return the
+    existing one. A raw PATCH to change someone's role after the fact is rejected by
+    guard_role_escalation() for service-role callers, so this goes through the same
+    org_invites redemption path POST /agents/invite uses -- see handle_new_user()."""
+    headers = auth_admin_headers(service_key)
+    existing = find_existing_user(client, base, headers, email)
+    if existing:
+        print(f"  Using existing user {email} → {existing['id']}")
+        return existing
+
+    invite = insert_row(
+        client, base, service_key, "org_invites",
+        {"organization_id": organization_id, "email": email, "role": role, "created_by": invited_by},
+    )
+    return _create_auth_user(
+        client, base, service_key, email, password,
+        {"full_name": full_name, "invite_token": invite["id"]},
+    )
 
 
 def insert_row(client: httpx.Client, base: str, service_key: str, table: str, row: dict[str, Any]) -> dict[str, Any]:
@@ -163,15 +223,17 @@ def patch_row(client: httpx.Client, base: str, service_key: str, table: str, pk_
         raise RuntimeError(f"PATCH {table} failed {r.status_code}: {r.text[:800]}")
 
 
-def get_row(client: httpx.Client, base: str, service_key: str, table: str, pk_col: str, pk: str) -> dict[str, Any]:
+def get_opportunity_for_lead(client: httpx.Client, base: str, service_key: str, lead_id: str) -> dict[str, Any]:
     r = client.get(
-        f"{base}/rest/v1/{table}",
+        f"{base}/rest/v1/opportunities",
+        params={"select": "id", "lead_id": f"eq.{lead_id}"},
         headers=rest_headers(service_key),
-        params={pk_col: f"eq.{pk}", "select": "*", "limit": "1"},
     )
-    if r.status_code >= 400 or not r.json():
-        raise RuntimeError(f"GET {table} failed {r.status_code}: {r.text[:800]}")
-    return r.json()[0]
+    r.raise_for_status()
+    rows = r.json()
+    if not rows:
+        raise RuntimeError(f"Missing opportunity shell for lead {lead_id}")
+    return rows[0]
 
 
 def main() -> None:
@@ -202,19 +264,19 @@ def main() -> None:
     h_rest = rest_headers(service_key)
 
     with httpx.Client(timeout=60.0) as client:
-        admin_id = create_or_get_user(client, base, service_key, ADMIN_EMAIL, password, "Seed Admin")
-        agent_id = create_or_get_user(client, base, service_key, AGENT_EMAIL, password, "Seed Agent")
-        sdr_id = create_or_get_user(client, base, service_key, SDR_EMAIL, password, "Seed SDR")
+        admin = create_or_get_founder(client, base, service_key, ADMIN_EMAIL, password, "Danush", DRACARA_ORG_NAME)
+        admin_id, dracara_org_id = admin["id"], admin["organization_id"]
 
-        patch_row(client, base, service_key, "users", "id", admin_id, {"role": "admin"})
-        patch_row(client, base, service_key, "users", "id", agent_id, {"role": "agent"})
-        patch_row(client, base, service_key, "users", "id", sdr_id, {"role": "sdr"})
-        print("Roles assigned (admin / agent / sdr).")
+        agent = create_or_get_invited(client, base, service_key, AGENT_EMAIL, password, "Arjun", dracara_org_id, "agent", admin_id)
+        sdr = create_or_get_invited(client, base, service_key, SDR_EMAIL, password, "Meera", dracara_org_id, "sdr", admin_id)
+        partner = create_or_get_invited(client, base, service_key, PARTNER_EMAIL, password, "Kabir", dracara_org_id, "partner", admin_id)
+        agent_id, sdr_id, partner_id = agent["id"], sdr["id"], partner["id"]
 
-        # organization_id has no natural parent for a service-role write to this row, so the
-        # trigger trusts it when supplied directly (see set_marketing_metric_organization()) --
-        # fetch the seed admin's own org to stamp the demo metrics with.
-        organization_id = get_row(client, base, service_key, "users", "id", admin_id)["organization_id"]
+        acme_admin = create_or_get_founder(client, base, service_key, ACME_ADMIN_EMAIL, password, "Priya", ACME_ORG_NAME)
+        acme_admin_id, acme_org_id = acme_admin["id"], acme_admin["organization_id"]
+
+        print(f"Dracara org: {dracara_org_id} (admin={admin_id}, agent={agent_id}, sdr={sdr_id}, partner={partner_id})")
+        print(f"Acme Corp org: {acme_org_id} (admin={acme_admin_id})")
 
         if args.dry_run:
             print("Dry run — skipping inserts.")
@@ -299,6 +361,10 @@ def main() -> None:
 
         owners_cycle = [admin_id, agent_id, sdr_id]
 
+        # stage / estimated value / deal probability / priority score all live on the
+        # opportunity the ensure_opportunity_for_lead() trigger auto-creates per lead, not on
+        # leads itself -- see supabase/migrations/20260905140000_initial_schema.sql's leads
+        # table. They're applied in a PATCH right after each insert, below.
         leads_spec: list[dict[str, Any]] = [
             {"ci": 0, "pci": 0, "stage": "prospect", "pt": "saas", "src": "linkedin", "ev": 4200000, "prob": 40},
             {"ci": 1, "pci": 2, "stage": "contacting", "pt": "ai", "src": "website", "ev": 8900000, "prob": 55},
@@ -317,6 +383,7 @@ def main() -> None:
         ]
 
         lead_rows: list[dict[str, Any]] = []
+        opp_ids: list[str] = []
         for li, ls in enumerate(leads_spec):
             owner = owners_cycle[li % len(owners_cycle)]
             lcd = today - timedelta(days=7 + li)
@@ -325,13 +392,8 @@ def main() -> None:
                 "company_id": company_ids[ls["ci"]],
                 "primary_contact_id": contact_ids[ls["pci"]],
                 "owner_id": owner,
-                "stage": ls["stage"],
                 "project_type": ls["pt"],
                 "lead_source": ls["src"],
-                "estimated_value": ls["ev"],
-                "currency": "INR",
-                "deal_probability": ls["prob"],
-                "priority_score": min(95, 25 + ls["prob"] // 2),
                 "last_contact_date": iso(lcd),
                 "next_followup_date": iso(nfd),
                 "tags": ["seed", ls["stage"], ls["pt"]],
@@ -339,7 +401,20 @@ def main() -> None:
             ins = insert_row(client, base, service_key, "leads", row)
             lead_rows.append(ins)
 
-        print(f"Inserted {len(lead_rows)} leads.")
+            opp = get_opportunity_for_lead(client, base, service_key, ins["id"])
+            patch_row(
+                client, base, service_key, "opportunities", "id", opp["id"],
+                {
+                    "stage": ls["stage"],
+                    "quoted_value": float(ls["ev"]),
+                    "currency": "INR",
+                    "deal_probability": ls["prob"],
+                    "priority_score": min(95, 25 + ls["prob"] // 2),
+                },
+            )
+            opp_ids.append(opp["id"])
+
+        print(f"Inserted {len(lead_rows)} leads (+ their auto-created opportunities).")
 
         # Enrich a subset of lead_intelligence rows
         intel_updates = [
@@ -385,7 +460,7 @@ def main() -> None:
                     "lead_id": lr["id"],
                     "owner_id": owners_cycle[i % 3],
                     "title": f"Follow-up: {lr['id'][:8]} task",
-                    "due_date": iso(due),
+                    "due_at": f"{iso(due)}T09:00:00+05:30",
                     "status": "pending" if i % 4 != 0 else "completed",
                 },
             )
@@ -411,21 +486,11 @@ def main() -> None:
             )
         print("Inserted meetings.")
 
-        # Enrich opportunity shells (trigger created one row per lead) + proposals for a subset
+        # Further enrich a subset of opportunities (title, scope) + a draft proposal each
         opp_indices = [5, 6, 7, 13]
         for oi, idx in enumerate(opp_indices):
-            lr = lead_rows[idx]
             ls_row = leads_spec[idx]
-            or_get = client.get(
-                f"{base}/rest/v1/opportunities",
-                params={"select": "id", "lead_id": f"eq.{lr['id']}"},
-                headers=h_rest,
-            )
-            or_get.raise_for_status()
-            opp_rows = or_get.json()
-            if not opp_rows:
-                raise RuntimeError(f"Missing opportunity shell for lead {lr['id']}")
-            opp_id = opp_rows[0]["id"]
+            opp_id = opp_ids[idx]
             patch_row(
                 client,
                 base,
@@ -435,12 +500,9 @@ def main() -> None:
                 opp_id,
                 {
                     "title": f"Opportunity — {companies_spec[ls_row['ci']]['name']}",
-                    "quoted_value": float(ls_row["ev"]),
-                    "currency": "INR",
                     "timeline_weeks": 12 + oi * 4,
                     "tech_stack": "Node, Postgres",
                     "requirements_doc": "High-level scope outlined in seed.",
-                    "status": "active",
                 },
             )
             insert_row(
@@ -456,11 +518,12 @@ def main() -> None:
                     "created_by": admin_id,
                 },
             )
-            patch_row(client, base, service_key, "leads", "id", lr["id"], {"is_opportunity": True})
 
         print("Enriched opportunities + proposals.")
 
-        # Marketing metrics (CAC snapshot — current month)
+        # Marketing metrics (CAC snapshot — current month). No natural parent row to derive
+        # organization_id from, so it's supplied directly (trusted for a service-role caller —
+        # see set_marketing_metric_organization()).
         month_start = date(today.year, today.month, 1)
         channels = [
             ("Events", 640000, 0.15),
@@ -475,7 +538,7 @@ def main() -> None:
                 service_key,
                 "marketing_channel_metrics",
                 {
-                    "organization_id": organization_id,
+                    "organization_id": dracara_org_id,
                     "period_month": iso(month_start),
                     "channel": ch,
                     "spend": spend,
@@ -485,10 +548,37 @@ def main() -> None:
             )
         print("Inserted marketing_channel_metrics.")
 
+        # A second, otherwise-empty tenant: one company/contact/lead owned by Acme's admin, to
+        # prove Dracara's users can't see it (and Acme's admin can't see Dracara's data).
+        acme_company = insert_row(
+            client, base, service_key, "companies",
+            {"name": "Acme Corp Client", "industry": "Retail", "size": "51-200",
+             "created_by": acme_admin_id},
+        )
+        acme_contact = insert_row(
+            client, base, service_key, "contacts",
+            {"company_id": acme_company["id"], "full_name": "Wile Coyote", "role": "Ops Lead",
+             "email": "wile@acmecorpclient.example.com", "is_primary": True},
+        )
+        acme_lead = insert_row(
+            client, base, service_key, "leads",
+            {"company_id": acme_company["id"], "primary_contact_id": acme_contact["id"],
+             "owner_id": acme_admin_id, "project_type": "webapp", "lead_source": "referral",
+             "tags": ["seed"]},
+        )
+        acme_opp = get_opportunity_for_lead(client, base, service_key, acme_lead["id"])
+        patch_row(
+            client, base, service_key, "opportunities", "id", acme_opp["id"],
+            {"stage": "contacting", "quoted_value": 1500000.0, "currency": "INR", "deal_probability": 40},
+        )
+        print("Inserted a lone Acme Corp company/contact/lead (isolation check).")
+
         print("\nDone. Sign in to the web app with:")
-        print(f"  {ADMIN_EMAIL}  /  {password}")
-        print(f"  {AGENT_EMAIL}  /  {password}")
-        print(f"  {SDR_EMAIL}  /  {password}")
+        print(f"  {ADMIN_EMAIL}    / {password}   (admin, org: {DRACARA_ORG_NAME})")
+        print(f"  {AGENT_EMAIL}     / {password}   (agent, org: {DRACARA_ORG_NAME})")
+        print(f"  {SDR_EMAIL}     / {password}   (sdr, org: {DRACARA_ORG_NAME})")
+        print(f"  {PARTNER_EMAIL}    / {password}   (partner, org: {DRACARA_ORG_NAME})")
+        print(f"  {ACME_ADMIN_EMAIL}      / {password}   (admin, org: {ACME_ORG_NAME})")
 
 
 if __name__ == "__main__":

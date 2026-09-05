@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Request, Response, status
 
-from app.api.deps import CurrentUserDep, DbDep, ProfileDep
+from app.api.deps import PROFILE_SELECT, CurrentUserDep, DbDep, ProfileDep, is_full_access
 from app.core.concurrency import set_etag
 from app.core.config import settings
 from app.core.errors import NotConfiguredError, UpstreamError
@@ -37,11 +37,20 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
     responses=AUTH_RESPONSES,
 )
 async def read_current_user(profile: ProfileDep, user: CurrentUserDep) -> CurrentUser:
+    role = profile.get("roles") or {}
+    permissions = sorted(
+        f"{g['permissions']['resource']}.{g['permissions']['action']}"
+        for g in (role.get("role_permissions") or [])
+        if g.get("permissions")
+    )
     return CurrentUser(
         id=str(profile.get("id") or user.sub),
         email=profile.get("email") or user.email,
         full_name=profile.get("full_name") or "",
-        role=str(profile.get("role") or "agent"),
+        role_id=str(profile["role_id"]),
+        role_name=str(role.get("name") or ""),
+        grants_full_access=is_full_access(profile),
+        permissions=permissions,
         # No fallback, deliberately: every profile row has a NOT NULL organization_id, so a
         # missing value here means something is badly wrong and should fail loudly rather than
         # silently becoming the string "None".
@@ -142,10 +151,12 @@ async def update_current_user(
         exclude_unset=True, mode="json"
     )
     if not changes:
-        profile = await db.select("users", params={"select": "*", "id": f"eq.{user.sub}"})
+        profile = await db.select("users", params={"select": PROFILE_SELECT, "id": f"eq.{user.sub}"})
         return await read_current_user(profile.one("Profile"), user)
 
-    result = await db.update("users", {"id": f"eq.{user.sub}"}, changes)
+    result = await db.update(
+        "users", {"id": f"eq.{user.sub}", "select": PROFILE_SELECT}, changes
+    )
     updated = result.one("Profile")
     set_etag(response, updated)
     return await read_current_user(updated, user)

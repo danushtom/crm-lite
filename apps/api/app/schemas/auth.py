@@ -28,7 +28,14 @@ class CurrentUser(APIModel):
     id: str
     email: str | None = None
     full_name: str = ""
-    role: str
+    role_id: str
+    role_name: str
+    grants_full_access: bool = Field(
+        description="True when this user's role bypasses row ownership within the organization."
+    )
+    permissions: list[str] = Field(
+        description="'<resource>.<action>' keys this user's role holds, e.g. 'leads.write'."
+    )
     organization_id: str
     avatar_url: str | None = None
     is_active: bool = True

@@ -179,7 +179,7 @@ export default function ContactDetailsPage() {
   const tier = primaryLead ? scoreTier(leadScore(primaryLead)) : null;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 pb-12 pt-2">
+    <div className="w-full space-y-4 pb-12 pt-2">
       <div className="flex items-center gap-2">
         <Link 
           href="/contacts" 

@@ -9,23 +9,17 @@ import { apiFetch } from "@/lib/api";
 import { compactPayload } from "@/lib/forms";
 import { useApiMutation } from "@/lib/use-api-mutation";
 import { EntityDrawer, SelectField, TextField } from "@/components/shared/entity-drawer";
+import type { Role } from "@dracara/types";
 
 export type AgentSummary = {
   id: string;
   email: string;
   full_name: string;
-  role: string;
+  role_id: string;
+  role_name: string;
   is_active: boolean;
   timezone?: string;
-  version: number;
 };
-
-const ROLE_OPTIONS = [
-  { value: "admin", label: "Admin — full access" },
-  { value: "agent", label: "Agent — own leads" },
-  { value: "sdr", label: "SDR — outreach" },
-  { value: "partner", label: "Partner — read-only intelligence" },
-];
 
 const ACCESS_OPTIONS = [
   { value: "true", label: "Active" },
@@ -48,23 +42,33 @@ const COMMON_TIMEZONES = [
  *
  * Admins could previously invite people but never change or revoke them — there was no way to
  * promote an agent or switch off access for someone who had left. The database refuses to
- * demote or deactivate the last active admin, so this cannot lock the organisation out.
+ * demote or deactivate the organization's last full-access user, so this cannot lock the
+ * workspace out.
  */
 export function AgentDrawer({ agent }: { agent: AgentSummary }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     full_name: agent.full_name ?? "",
-    role: agent.role,
+    role_id: agent.role_id,
     is_active: String(agent.is_active),
     timezone: agent.timezone ?? "Asia/Kolkata",
   });
+
+  const { data: roles } = useQuery({
+    queryKey: ["roles"],
+    queryFn: () => apiFetch<Role[]>("/roles"),
+  });
+  const roleOptions = (roles ?? []).map((r) => ({
+    value: r.id,
+    label: r.grants_full_access ? `${r.name} — full access` : r.name,
+  }));
 
   useEffect(() => {
     if (!open) return;
     setForm({
       full_name: agent.full_name ?? "",
-      role: agent.role,
+      role_id: agent.role_id,
       is_active: String(agent.is_active),
       timezone: agent.timezone ?? "Asia/Kolkata",
     });
@@ -77,12 +81,13 @@ export function AgentDrawer({ agent }: { agent: AgentSummary }) {
     errorTitle: "Could not update this team member",
     mutationFn: () =>
       apiFetch<AgentSummary>(`/agents/${agent.id}`, {
+        // No If-Match: public.users has no version column (it was never added to the
+        // bump_version() table list), so there is nothing to make this conditional on.
         method: "PATCH",
-        headers: { "If-Match": `"${agent.version}"` },
         body: JSON.stringify(
           compactPayload({
             full_name: form.full_name.trim(),
-            role: form.role,
+            role_id: form.role_id,
             timezone: form.timezone,
             // A boolean, so compactPayload must not see it as an empty string.
             is_active: form.is_active === "true",
@@ -91,8 +96,9 @@ export function AgentDrawer({ agent }: { agent: AgentSummary }) {
       }),
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["roles"] });
       toast.success("Team member updated", {
-        description: `${saved.full_name || saved.email} — ${saved.role}`,
+        description: `${saved.full_name || saved.email} — ${saved.role_name}`,
       });
       setOpen(false);
     },
@@ -114,7 +120,7 @@ export function AgentDrawer({ agent }: { agent: AgentSummary }) {
     enabled: open,
   });
 
-  const roleChanged = form.role !== agent.role;
+  const roleChanged = form.role_id !== agent.role_id;
   const accessChanged = form.is_active !== String(agent.is_active);
 
   return (
@@ -145,13 +151,13 @@ export function AgentDrawer({ agent }: { agent: AgentSummary }) {
       <SelectField
         id="agent-role"
         label="Role"
-        value={form.role}
-        onChange={(v) => set("role", v)}
-        options={ROLE_OPTIONS}
+        value={form.role_id}
+        onChange={(v) => set("role_id", v)}
+        options={roleOptions}
         hint={
           roleChanged
             ? "Takes effect the next time they load the app."
-            : "Partners can read CRM intelligence but not edit it."
+            : "Manage what each role can do from the Roles tab."
         }
       />
 
@@ -202,8 +208,8 @@ export function AgentDrawer({ agent }: { agent: AgentSummary }) {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        The last active admin cannot be demoted or have access revoked — otherwise nobody
-        could administer the workspace.
+        The organization's last full-access user cannot be demoted or have access revoked —
+        otherwise nobody could administer the workspace.
       </p>
     </EntityDrawer>
   );

@@ -70,6 +70,7 @@ TAGS_METADATA = [
     {"name": "Tasks", "description": "Follow-up tasks: complete, snooze, reschedule."},
     {"name": "Meetings", "description": "Scheduled meetings and outcome capture."},
     {"name": "Notifications", "description": "In-app notification inbox."},
+    {"name": "Roles", "description": "Organization-owned roles and their permission grants."},
     {"name": "Agents", "description": "Team management and performance. Admin only."},
 ]
 
@@ -124,7 +125,7 @@ def create_app() -> FastAPI:
         allow_origins=settings.cors_origins_list or ["http://localhost:3000"],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "If-Match"],
         expose_headers=["X-Request-ID", "X-API-Version", "Location", "Server-Timing"],
         max_age=600,
     )

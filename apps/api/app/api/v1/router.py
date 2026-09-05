@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     notifications,
     opportunities,
     proposals,
+    roles,
     tasks,
 )
 
@@ -35,4 +36,5 @@ api_router.include_router(contacts.router)
 api_router.include_router(tasks.router)
 api_router.include_router(meetings.router)
 api_router.include_router(notifications.router)
+api_router.include_router(roles.router)
 api_router.include_router(agents.router)

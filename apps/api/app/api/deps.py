@@ -15,7 +15,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.errors import ForbiddenError, UnauthorizedError
 from app.core.security import TokenUser, decode_access_token_async
 from app.db.supabase import SupabaseAdminClient, SupabaseClient
-from app.domain.enums import UserRole
 
 bearer_scheme = HTTPBearer(
     scheme_name="SupabaseAccessToken",
@@ -67,9 +66,20 @@ async def get_admin_db() -> SupabaseAdminClient:
 AdminDbDep = Annotated[SupabaseAdminClient, Depends(get_admin_db)]
 
 
+#: role/permissions live two joins away (users -> roles -> role_permissions -> permissions),
+#: not on the users row directly. Anywhere a profile is re-fetched (not just get_current_profile
+#: below) needs this same embed, or is_full_access()/has_permission() silently see no role at
+#: all rather than an error -- reuse this rather than writing "select": "*" by hand.
+PROFILE_SELECT = "*,roles(id,name,grants_full_access,role_permissions(permissions(resource,action)))"
+
+
 async def get_current_profile(db: DbDep, user: CurrentUserDep) -> dict:
-    """Load the caller's ``public.users`` row (their role lives there, not in the token)."""
-    result = await db.select("users", params={"select": "*", "id": f"eq.{user.sub}"})
+    """Load the caller's ``public.users`` row, with their role and its permission grants
+    embedded in the same query -- see PROFILE_SELECT.
+    """
+    result = await db.select(
+        "users", params={"select": PROFILE_SELECT, "id": f"eq.{user.sub}"}
+    )
     profile = result.first()
     if profile is None:
         raise ForbiddenError("No profile exists for this account")
@@ -79,30 +89,44 @@ async def get_current_profile(db: DbDep, user: CurrentUserDep) -> dict:
 ProfileDep = Annotated[dict, Depends(get_current_profile)]
 
 
-def require_roles(*allowed: UserRole):
-    """Build a dependency asserting the caller holds one of ``allowed``."""
-    allowed_values = {str(role) for role in allowed}
-
-    async def _guard(profile: ProfileDep) -> dict:
-        if str(profile.get("role")) not in allowed_values:
-            raise ForbiddenError(
-                "This action requires one of the following roles: "
-                + ", ".join(sorted(allowed_values))
-            )
-        return profile
-
-    return _guard
+def is_full_access(profile: dict) -> bool:
+    """True when the profile's role bypasses ownership entirely within its organization."""
+    role = profile.get("roles") or {}
+    return bool(role.get("grants_full_access"))
 
 
-require_admin = require_roles(UserRole.ADMIN)
-AdminDep = Annotated[dict, Depends(require_admin)]
+def has_permission(profile: dict, permission: str) -> bool:
+    """``permission`` is a ``'<resource>.<action>'`` key from the permissions catalog."""
+    if is_full_access(profile):
+        return True
+    role = profile.get("roles") or {}
+    for grant in role.get("role_permissions") or []:
+        perm = grant.get("permissions") or {}
+        if f"{perm.get('resource')}.{perm.get('action')}" == permission:
+            return True
+    return False
 
 
-async def forbid_partner(profile: ProfileDep) -> dict:
-    """Partners are external collaborators: they may read, but not edit CRM intelligence."""
-    if str(profile.get("role")) == UserRole.PARTNER:
-        raise ForbiddenError("Partners cannot edit CRM intelligence")
+async def require_full_access(profile: ProfileDep) -> dict:
+    if not is_full_access(profile):
+        raise ForbiddenError("This action requires a role with full organization access")
     return profile
 
 
-NonPartnerDep = Annotated[dict, Depends(forbid_partner)]
+require_admin = require_full_access
+AdminDep = Annotated[dict, Depends(require_full_access)]
+
+
+def require_permission(permission: str):
+    """Build a dependency asserting the caller's role holds ``permission``.
+
+    A role marked ``grants_full_access`` always passes, same as every other bypass in this
+    codebase (see ``is_admin()`` in the database).
+    """
+
+    async def _guard(profile: ProfileDep) -> dict:
+        if not has_permission(profile, permission):
+            raise ForbiddenError(f"This action requires the '{permission}' permission")
+        return profile
+
+    return _guard
