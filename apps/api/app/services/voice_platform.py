@@ -76,7 +76,7 @@ async def create_assistant(
             "model": "gpt-4o",
             "messages": [{"role": "system", "content": system_prompt}],
         },
-        "serverUrl": _webhook_url("platform/tool-call"),
+        "serverUrl": _webhook_url("platform/events"),
         "serverUrlSecret": settings.voice_platform_webhook_secret or None,
     }
     if voice_id:
