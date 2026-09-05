@@ -315,7 +315,7 @@ def overdue_escalation() -> str:
         "GET",
         "/tasks",
         params={
-            "select": "id,owner_id,title,due_at",
+            "select": "id,owner_id,title,due_at,organization_id",
             "due_at": f"lt.{now_iso}",
             "status": "eq.pending",
             "order": "due_at.asc",
@@ -323,11 +323,16 @@ def overdue_escalation() -> str:
         },
     )
     tasks = rows or []
-    admins = sb.request("GET", "/users", params={"select": "id", "role": "eq.admin"})
-    admin_ids = [str(a["id"]) for a in (admins or [])]
+    admins = sb.request("GET", "/users", params={"select": "id,organization_id", "role": "eq.admin"})
+    # Admins are scoped to their own tenant -- an admin in one organization must never be
+    # notified about (or learn the existence of) an overdue task in another's.
+    admin_ids_by_org: dict[str, list[str]] = {}
+    for a in admins or []:
+        admin_ids_by_org.setdefault(str(a["organization_id"]), []).append(str(a["id"]))
     for t in tasks:
         oid = str(t["owner_id"])
         tid = str(t["id"])
+        org_id = str(t["organization_id"])
         insert_notification(
             sb,
             user_id=oid,
@@ -338,7 +343,7 @@ def overdue_escalation() -> str:
             metadata={"task_id": tid},
             source_task_id=tid,
         )
-        for aid in admin_ids:
+        for aid in admin_ids_by_org.get(org_id, []):
             insert_notification(
                 sb,
                 user_id=aid,

@@ -163,6 +163,17 @@ def patch_row(client: httpx.Client, base: str, service_key: str, table: str, pk_
         raise RuntimeError(f"PATCH {table} failed {r.status_code}: {r.text[:800]}")
 
 
+def get_row(client: httpx.Client, base: str, service_key: str, table: str, pk_col: str, pk: str) -> dict[str, Any]:
+    r = client.get(
+        f"{base}/rest/v1/{table}",
+        headers=rest_headers(service_key),
+        params={pk_col: f"eq.{pk}", "select": "*", "limit": "1"},
+    )
+    if r.status_code >= 400 or not r.json():
+        raise RuntimeError(f"GET {table} failed {r.status_code}: {r.text[:800]}")
+    return r.json()[0]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed Dracara demo data")
     parser.add_argument("--dry-run", action="store_true", help="Only connectivity + ensure seed users exist")
@@ -199,6 +210,11 @@ def main() -> None:
         patch_row(client, base, service_key, "users", "id", agent_id, {"role": "agent"})
         patch_row(client, base, service_key, "users", "id", sdr_id, {"role": "sdr"})
         print("Roles assigned (admin / agent / sdr).")
+
+        # organization_id has no natural parent for a service-role write to this row, so the
+        # trigger trusts it when supplied directly (see set_marketing_metric_organization()) --
+        # fetch the seed admin's own org to stamp the demo metrics with.
+        organization_id = get_row(client, base, service_key, "users", "id", admin_id)["organization_id"]
 
         if args.dry_run:
             print("Dry run — skipping inserts.")
@@ -459,6 +475,7 @@ def main() -> None:
                 service_key,
                 "marketing_channel_metrics",
                 {
+                    "organization_id": organization_id,
                     "period_month": iso(month_start),
                     "channel": ch,
                     "spend": spend,

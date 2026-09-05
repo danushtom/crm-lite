@@ -268,15 +268,28 @@ def test_followup_reminder_uses_an_absolute_window(fake_sb):
 
 def test_overdue_escalation_notifies_owner_and_admins(fake_sb, no_real_notifications):
     fake_sb.responses["GET /tasks"] = [
-        {"id": "t-5", "owner_id": "u-1", "title": "Late", "due_at": "2026-01-01T09:00:00+00:00"}
+        {
+            "id": "t-5",
+            "owner_id": "u-1",
+            "title": "Late",
+            "due_at": "2026-01-01T09:00:00+00:00",
+            "organization_id": "org-a",
+        }
     ]
-    fake_sb.responses["GET /users"] = [{"id": "admin-1"}, {"id": "admin-2"}]
+    fake_sb.responses["GET /users"] = [
+        {"id": "admin-1", "organization_id": "org-a"},
+        {"id": "admin-2", "organization_id": "org-a"},
+        # A different tenant's admin must never hear about this org's overdue task.
+        {"id": "admin-3", "organization_id": "org-b"},
+    ]
 
     worker_app.overdue_escalation()
 
     kinds = [n["notif_type"] for n in no_real_notifications]
     assert kinds.count("task_overdue") == 1
     assert kinds.count("task_overdue_admin") == 2
+    notified_admins = {n["user_id"] for n in no_real_notifications if n["notif_type"] == "task_overdue_admin"}
+    assert notified_admins == {"admin-1", "admin-2"}
 
 
 # --- HTTP client reuse --------------------------------------------------------

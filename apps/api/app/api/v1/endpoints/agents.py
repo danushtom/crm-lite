@@ -7,9 +7,9 @@ import logging
 import httpx
 from fastapi import APIRouter, Request, Response, status
 
-from app.api.deps import AdminDep, DbDep
+from app.api.deps import AdminDbDep, AdminDep, DbDep
 from app.core.config import settings
-from app.core.errors import NotConfiguredError, UpstreamError
+from app.core.errors import UpstreamError
 from app.core.pagination import Page, PageParamsDep
 from app.core.concurrency import IfMatchDep, set_etag, update_guarded
 from app.core.rate_limit import limiter
@@ -64,10 +64,27 @@ async def list_agents(db: DbDep, page: PageParamsDep, _admin: AdminDep) -> Page[
 async def invite_agent(
     request: Request,
     body: AgentInvite,
+    admin_db: AdminDbDep,
     _admin: AdminDep,
 ) -> AgentInviteResult:
-    if not settings.supabase_service_role_key:
-        raise NotConfiguredError("SUPABASE_SERVICE_ROLE_KEY is required to send invitations")
+    # admin_db's own construction (get_admin_db -> SupabaseAdminClient()) already raises
+    # ServiceUnavailableError when the service-role key is missing, before this body runs --
+    # no separate check needed here.
+
+    # A single-use, expiring, email-pinned token -- not the organization id or role
+    # themselves -- is what goes into the invitee's signup metadata. handle_new_user()
+    # redeems it. Metadata on a public signup call is client-settable, so the organization
+    # and role a new user ends up with must never be read directly from it.
+    invite_result = await admin_db.insert(
+        "org_invites",
+        {
+            "organization_id": _admin["organization_id"],
+            "email": str(body.email),
+            "role": str(body.role),
+            "created_by": _admin["id"],
+        },
+    )
+    invite_token = invite_result.one("Invite")["id"]
 
     client = get_http_client()
     try:
@@ -80,14 +97,21 @@ async def invite_agent(
             },
             json={
                 "email": str(body.email),
-                "data": {"full_name": body.full_name or "", "role": str(body.role)},
+                "data": {
+                    "full_name": body.full_name or "",
+                    "invite_token": str(invite_token),
+                },
             },
         )
     except httpx.HTTPError as exc:
+        await admin_db.delete("org_invites", {"id": f"eq.{invite_token}"})
         raise UpstreamError("Could not reach the authentication service") from exc
 
     if response.status_code >= 400:
         logger.error("agent_invite_failed status=%s body=%s", response.status_code, response.text)
+        # The token was never sent anywhere -- don't leave a redeemable, unconsumed invite
+        # sitting around for its full 7-day expiry.
+        await admin_db.delete("org_invites", {"id": f"eq.{invite_token}"})
         raise UpstreamError("The authentication service rejected the invitation")
 
     payload = response.json() if response.content else {}

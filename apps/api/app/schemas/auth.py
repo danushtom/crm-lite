@@ -29,6 +29,7 @@ class CurrentUser(APIModel):
     email: str | None = None
     full_name: str = ""
     role: str
+    organization_id: str
     avatar_url: str | None = None
     is_active: bool = True
 

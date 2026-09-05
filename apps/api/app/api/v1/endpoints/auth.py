@@ -42,6 +42,10 @@ async def read_current_user(profile: ProfileDep, user: CurrentUserDep) -> Curren
         email=profile.get("email") or user.email,
         full_name=profile.get("full_name") or "",
         role=str(profile.get("role") or "agent"),
+        # No fallback, deliberately: every profile row has a NOT NULL organization_id, so a
+        # missing value here means something is badly wrong and should fail loudly rather than
+        # silently becoming the string "None".
+        organization_id=profile["organization_id"],
         avatar_url=profile.get("avatar_url"),
         is_active=bool(profile.get("is_active", True)),
         timezone=str(profile.get("timezone") or "Asia/Kolkata"),
