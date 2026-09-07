@@ -43,6 +43,7 @@ async def read_current_user(profile: ProfileDep, user: CurrentUserDep) -> Curren
         for g in (role.get("role_permissions") or [])
         if g.get("permissions")
     )
+    org = profile.get("organizations") or {}
     return CurrentUser(
         id=str(profile.get("id") or user.sub),
         email=profile.get("email") or user.email,
@@ -55,6 +56,7 @@ async def read_current_user(profile: ProfileDep, user: CurrentUserDep) -> Curren
         # missing value here means something is badly wrong and should fail loudly rather than
         # silently becoming the string "None".
         organization_id=profile["organization_id"],
+        organization_name=str(org.get("name") or ""),
         avatar_url=profile.get("avatar_url"),
         is_active=bool(profile.get("is_active", True)),
         timezone=str(profile.get("timezone") or "Asia/Kolkata"),

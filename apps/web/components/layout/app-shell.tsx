@@ -23,11 +23,18 @@ import {
   Target,
   PhoneCall,
 } from "lucide-react";
-import { Button, cn, Input } from "@dracara/ui";
+import { Button, cn, Input, Skeleton } from "@dracara/ui";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api";
 import { AppTopBar } from "@/components/layout/app-top-bar";
+
+type MeResponse = {
+  organization_name: string;
+  organization_id: string;
+};
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -52,6 +59,11 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
+
+  const { data: meData } = useQuery({
+    queryKey: ["me"],
+    queryFn: () => apiFetch<MeResponse>("/auth/me"),
+  });
 
   useEffect(() => {
     try {
@@ -120,14 +132,35 @@ export function AppShell({
               <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
               {!collapsed ? (
                 <>
-                  <span className="flex-1 truncate text-left">Mesh</span>
-                  <ChevronDown className="h-4 w-4 shrink-0 opacity-50 group-open:rotate-180" />
+                  <span className="flex-1 truncate text-left">
+                    {meData?.organization_name || <Skeleton className="h-4 w-20 inline-block" />}
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 opacity-50 transition-transform group-open:rotate-180" />
                 </>
               ) : null}
             </summary>
             {!collapsed ? (
-              <div className="mt-1 rounded-lg border border-dashed border-border px-2 py-2 text-xs text-muted-foreground">
-                Workspace settings coming soon.
+              <div className="mt-1 space-y-1">
+                <Link
+                  href="/settings"
+                  className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Settings className="h-3 w-3" />
+                    Workspace Settings
+                  </span>
+                  <ChevronRight className="h-3 w-3 opacity-50" />
+                </Link>
+                <Link
+                  href="/agents"
+                  className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Users className="h-3 w-3" />
+                    Team Members
+                  </span>
+                  <ChevronRight className="h-3 w-3 opacity-50" />
+                </Link>
               </div>
             ) : null}
           </details>

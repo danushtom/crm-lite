@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn } from "@dracara/ui";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn, Skeleton } from "@dracara/ui";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -53,13 +53,25 @@ export default function OpportunityOverview() {
     queryFn: () => apiFetch<OpportunityData>(`/opportunities/${id}`),
   });
 
-  if (isLoading || !opp) return <div className="space-y-6 animate-pulse">
-    <div className="h-64 bg-muted/40 rounded-xl" />
-    <div className="grid grid-cols-3 gap-6">
-      <div className="h-96 bg-muted/20 rounded-xl col-span-2" />
-      <div className="h-96 bg-muted/20 rounded-xl" />
+  if (isLoading || !opp) return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Skeleton className="h-[120px] w-full rounded-xl" />
+        <Skeleton className="h-[120px] w-full rounded-xl" />
+        <Skeleton className="h-[120px] w-full rounded-xl" />
+        <Skeleton className="h-[120px] w-full rounded-xl" />
+      </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <Skeleton className="h-[280px] w-full rounded-xl" />
+          <Skeleton className="h-[200px] w-full rounded-xl" />
+        </div>
+        <div className="space-y-6">
+           <Skeleton className="h-[180px] w-full rounded-xl" />
+        </div>
+      </div>
     </div>
-  </div>;
+  );
 
   const formatCurrency = (val: number, curr: string) => {
     return new Intl.NumberFormat("en-US", {
@@ -72,9 +84,9 @@ export default function OpportunityOverview() {
   const proposals = opp.proposals || [];
 
   const kpiCardClass = "rounded-xl border border-border/70 bg-card shadow-sm overflow-hidden";
-
+  
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both">
       {/* Commercial KPIs */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className={kpiCardClass}>

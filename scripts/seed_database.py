@@ -27,11 +27,11 @@ Creates two organizations to demonstrate tenant isolation:
 
 All non-founding users (arjun, meera, kabir) join via a redeemed org_invites
 token rather than a post-creation role PATCH: a service-role PATCH that
-changes someone's role is rejected by guard_role_escalation() (it only
+changes someone's role_id is rejected by guard_user_role_change() (it only
 trusts a role change made by an authenticated admin, not a bare service-role
 connection with no auth.uid()), and organization/role are no longer
 something a client can set directly on signup anyway -- see
-supabase/migrations/20260905140000_initial_schema.sql's handle_new_user().
+supabase/migrations/20260905160000_dynamic_roles.sql's handle_new_user().
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ ADMIN_EMAIL = "danush@dracara.dev"
 AGENT_EMAIL = "arjun@dracara.dev"
 SDR_EMAIL = "meera@dracara.dev"
 PARTNER_EMAIL = "kabir@dracara.dev"
-ACME_ADMIN_EMAIL = "priya@acme.corp"
+ACME_ADMIN_EMAIL = "danush@acme.corp"
 
 
 def load_dotenv_file(path: Path) -> dict[str, str]:
@@ -103,7 +103,7 @@ def wait_public_user(client: httpx.Client, base: str, headers: dict[str, str], u
     for _ in range(retries):
         r = client.get(
             f"{base}/rest/v1/users",
-            params={"select": "id,email,full_name,role,organization_id", "id": f"eq.{uid}"},
+            params={"select": "id,email,full_name,role_id,organization_id", "id": f"eq.{uid}"},
             headers=headers,
         )
         r.raise_for_status()
@@ -134,12 +134,25 @@ def rest_headers(service_key: str) -> dict[str, str]:
 def find_existing_user(client: httpx.Client, base: str, headers: dict[str, str], email: str) -> dict[str, Any] | None:
     r = client.get(
         f"{base}/rest/v1/users",
-        params={"select": "id,email,role,organization_id", "email": f"eq.{email}"},
+        params={"select": "id,email,role_id,organization_id", "email": f"eq.{email}"},
         headers=headers,
     )
     r.raise_for_status()
     rows = r.json()
     return rows[0] if rows else None
+
+
+def get_role_id(client: httpx.Client, base: str, service_key: str, organization_id: str, role_name: str) -> str:
+    r = client.get(
+        f"{base}/rest/v1/roles",
+        params={"select": "id", "organization_id": f"eq.{organization_id}", "name": f"ilike.{role_name}"},
+        headers=rest_headers(service_key),
+    )
+    r.raise_for_status()
+    rows = r.json()
+    if not rows:
+        raise RuntimeError(f"Role {role_name} not found in org {organization_id}")
+    return rows[0]["id"]
 
 
 def _create_auth_user(
@@ -194,9 +207,10 @@ def create_or_get_invited(
         print(f"  Using existing user {email} → {existing['id']}")
         return existing
 
+    role_id = get_role_id(client, base, service_key, organization_id, role)
     invite = insert_row(
         client, base, service_key, "org_invites",
-        {"organization_id": organization_id, "email": email, "role": role, "created_by": invited_by},
+        {"organization_id": organization_id, "email": email, "role_id": role_id, "created_by": invited_by},
     )
     return _create_auth_user(
         client, base, service_key, email, password,
@@ -272,7 +286,7 @@ def main() -> None:
         partner = create_or_get_invited(client, base, service_key, PARTNER_EMAIL, password, "Kabir", dracara_org_id, "partner", admin_id)
         agent_id, sdr_id, partner_id = agent["id"], sdr["id"], partner["id"]
 
-        acme_admin = create_or_get_founder(client, base, service_key, ACME_ADMIN_EMAIL, password, "Priya", ACME_ORG_NAME)
+        acme_admin = create_or_get_founder(client, base, service_key, ACME_ADMIN_EMAIL, password, "Danush", ACME_ORG_NAME)
         acme_admin_id, acme_org_id = acme_admin["id"], acme_admin["organization_id"]
 
         print(f"Dracara org: {dracara_org_id} (admin={admin_id}, agent={agent_id}, sdr={sdr_id}, partner={partner_id})")

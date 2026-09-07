@@ -70,7 +70,7 @@ AdminDbDep = Annotated[SupabaseAdminClient, Depends(get_admin_db)]
 #: not on the users row directly. Anywhere a profile is re-fetched (not just get_current_profile
 #: below) needs this same embed, or is_full_access()/has_permission() silently see no role at
 #: all rather than an error -- reuse this rather than writing "select": "*" by hand.
-PROFILE_SELECT = "*,roles(id,name,grants_full_access,role_permissions(permissions(resource,action)))"
+PROFILE_SELECT = "*,roles(id,name,grants_full_access,role_permissions(permissions(resource,action))),organizations!users_organization_id_fkey(name)"
 
 
 async def get_current_profile(db: DbDep, user: CurrentUserDep) -> dict:

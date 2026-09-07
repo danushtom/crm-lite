@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from "@dracara/ui";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Skeleton } from "@dracara/ui";
 import { scoreTier, type CompanyRow, type ContactRow, type LeadWithOpportunities, type LeadIntelligenceRow, type ActivityRow, type OpportunitySummaryRow } from "@dracara/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiMutation } from "@/lib/use-api-mutation";
@@ -144,16 +144,16 @@ export default function LeadOverviewPage() {
 
   if (isLoading || !data) {
     return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-36 rounded-xl bg-muted/80" />
+      <div className="space-y-6">
+        <Skeleton className="h-36 w-full rounded-xl" />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-28 rounded-xl bg-muted/60" />
+            <Skeleton key={i} className="h-28 w-full rounded-xl" />
           ))}
         </div>
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="h-64 rounded-xl bg-muted/60 lg:col-span-2" />
-          <div className="h-64 rounded-xl bg-muted/60" />
+          <Skeleton className="h-64 w-full rounded-xl lg:col-span-2" />
+          <Skeleton className="h-64 w-full rounded-xl" />
         </div>
       </div>
     );
@@ -182,7 +182,7 @@ export default function LeadOverviewPage() {
   ].filter((x) => x.value != null && String(x.value).trim() !== "");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both">
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-stretch">
         <Card className={kpiCardClass}>

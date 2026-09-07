@@ -1,7 +1,7 @@
 "use client";
 
 import type { CompanyRow, ContactRow, LeadWithOpportunities } from "@dracara/types";
-import { Badge, Button, Card, CardContent } from "@dracara/ui";
+import { Badge, Button, Card, CardContent, Skeleton } from "@dracara/ui";
 import { useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
@@ -18,9 +18,13 @@ import {
   Target,
   WalletCards,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import { apiListAll } from "@/lib/api";
 import { AddLeadDrawer } from "@/components/leads/add-lead-drawer";
+import { AskAiDrawer } from "@/components/ai/ask-ai-drawer";
+import { LeadsGallery } from "@/components/leads/leads-gallery";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { cn } from "@dracara/ui";
 import { leadCurrency, leadScore, leadStage, leadValue } from "@/lib/leads";
 
 type LeadWithCo = LeadWithOpportunities & {
@@ -39,7 +43,7 @@ const STAGE_VARIANTS: Record<string, string> = {
   delivery_transition: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
   on_hold: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
   followup_later: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
-  lost: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
+  lost: "bg-rose-100 text-rose-700 dark:rose-900/30 dark:text-rose-300",
 };
 
 function formatCompactCurrency(n: number, currency: string = "USD"): string {
@@ -58,6 +62,12 @@ function toK(n: number): string {
 }
 
 export default function LeadsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const viewMode = searchParams.get("view") || "list";
+
+  const [showAi, setShowAi] = useState(false);
   const { data: leads = [], isLoading: leadsLoading, error: leadsError } = useQuery({
     queryKey: ["leads", "leads-page"],
     queryFn: () => apiListAll<LeadWithCo>("/leads"),
@@ -133,40 +143,49 @@ export default function LeadsPage() {
   }, [rows]);
 
   return (
-    <div className="-mt-1 space-y-3">
-      <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button className="h-8 gap-1.5 rounded-md bg-[#0B7FB3] px-3 text-xs font-semibold text-white hover:bg-[#0a6d99]">
-            <Sparkles className="h-3.5 w-3.5" />
-            Ask AI
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-            <Filter className="h-3.5 w-3.5" />
-            Filter
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Sort
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-            Group
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-card p-0.5">
-            <button className="inline-flex h-6 items-center gap-1 rounded bg-muted/80 px-2 text-xs font-semibold text-foreground">
-              <List className="h-3.5 w-3.5" />
-              List
-            </button>
-            <button className="inline-flex h-6 items-center gap-1 rounded px-2 text-xs text-muted-foreground">
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Gallery
-            </button>
+    <>
+      <AskAiDrawer open={showAi} onOpenChange={setShowAi} contextData={{ summary, rows }} />
+      <div className="-mt-1 space-y-3">
+        <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setShowAi(true)}
+              className="h-8 gap-1.5 rounded-md bg-[#0B7FB3] px-3 text-xs font-semibold text-white hover:bg-[#0a6d99]"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Ask AI
+            </Button>
           </div>
-          <AddLeadDrawer />
+          <div className="flex items-center gap-2">
+            <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-card p-0.5">
+              <button 
+                onClick={() => {
+                  const p = new URLSearchParams(searchParams.toString());
+                  p.set("view", "list");
+                  router.push(`${pathname}?${p.toString()}`);
+                }}
+                className={cn("inline-flex h-6 items-center gap-1 rounded px-2 text-xs transition-colors", viewMode === "list" ? "bg-muted/80 font-semibold text-foreground" : "text-muted-foreground")}
+              >
+                <List className="h-3.5 w-3.5" />
+                List
+              </button>
+              <button 
+                onClick={() => {
+                  const p = new URLSearchParams(searchParams.toString());
+                  p.set("view", "gallery");
+                  router.push(`${pathname}?${p.toString()}`);
+                }}
+                className={cn("inline-flex h-6 items-center gap-1 rounded px-2 text-xs transition-colors", viewMode === "gallery" ? "bg-muted/80 font-semibold text-foreground" : "text-muted-foreground")}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Gallery
+              </button>
+            </div>
+            <AddLeadDrawer />
+          </div>
         </div>
-      </div>
 
       <Card className="rounded-xl border border-border/70 bg-card shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
         <CardContent className="space-y-4 pt-4">
@@ -182,20 +201,6 @@ export default function LeadsPage() {
                 {formatCompactCurrency(summary.totalValue)}
                 <span className="ml-2 text-sm font-medium text-muted-foreground">across {summary.totalLeads} leads</span>
               </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-                <Target className="h-3.5 w-3.5 text-muted-foreground" />
-                Score Rules
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-                <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
-                History
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 gap-1 rounded-md border-border/70 px-3 text-xs font-semibold">
-                Collapse
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-              </Button>
             </div>
           </div>
 
@@ -228,9 +233,43 @@ export default function LeadsPage() {
           {error ? (
             <p className="text-sm text-destructive">{error.message}</p>
           ) : isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading leads…</p>
+            <table className="w-full min-w-[920px] border-collapse text-sm">
+              <thead>
+                  <tr className="border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground">
+                    <th className="w-8 py-2.5">
+                      <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" disabled />
+                    </th>
+                    <th className="py-2.5 pr-4">Project Name</th>
+                    <th className="py-2.5 pr-4">Stage</th>
+                    <th className="py-2.5 pr-4">Score</th>
+                    <th className="py-2.5 pr-4">Value</th>
+                    <th className="py-2.5 pr-4">Source</th>
+                    <th className="py-2.5 pr-4">Next Follow-up</th>
+                  </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b border-border/50">
+                    <td className="w-8 py-2.5"><Skeleton className="h-3.5 w-3.5 rounded" /></td>
+                    <td className="py-2.5 pr-4">
+                      <div className="space-y-1.5">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-3 w-24" />
+                      </div>
+                    </td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-5 w-20 rounded-full" /></td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-5 w-8 rounded-full" /></td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-4 w-16" /></td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-4 w-20" /></td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-4 w-16" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">No leads yet.</p>
+          ) : viewMode === "gallery" ? (
+            <LeadsGallery leads={rows} />
           ) : (
               <table className="w-full min-w-[920px] border-collapse text-sm">
               <thead>
@@ -277,8 +316,12 @@ export default function LeadsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((lead) => (
-                  <tr key={lead.id} className="border-b border-border/50">
+                {rows.map((lead, index) => (
+                  <tr 
+                    key={lead.id} 
+                    className="border-b border-border/50 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
                       <td className="w-8 py-2.5">
                         <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" />
                       </td>
@@ -342,6 +385,7 @@ export default function LeadsPage() {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

@@ -11,7 +11,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-  Input
+  Input,
+  Skeleton
 } from "@dracara/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiMutation } from "@/lib/use-api-mutation";
@@ -41,8 +42,10 @@ import { useMemo, useState, useEffect } from "react";
 import { apiFetch, apiListAll } from "@/lib/api";
 import Link from "next/link";
 import { ContactDrawer } from "@/components/contacts/contact-drawer";
+import { ContactsGallery } from "@/components/contacts/contacts-gallery";
 import { cn } from "@dracara/ui";
 import { leadStage } from "@/lib/leads";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
 type CompanyStage = "Won" | "Leads" | "Lost" | "Discovery";
 
@@ -103,6 +106,10 @@ function contactPipelineStage(contact: ContactRow, leads: LeadWithOpportunities[
 
 export default function ContactsPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const viewMode = searchParams.get("view") || "list";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStage, setSelectedStage] = useState<string>("all");
@@ -224,7 +231,7 @@ export default function ContactsPage() {
       average: rows.length,
       campaigns,
     };
-  }, []);
+  }, [rows]);
 
   const isFiltered = selectedStage !== "all" || searchQuery !== "";
 
@@ -233,10 +240,7 @@ export default function ContactsPage() {
       {/* Action Bar */}
       <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <Button className="h-8 gap-1.5 rounded-md bg-[#0B7FB3] px-3 text-xs font-semibold text-white hover:bg-[#0a6d99]">
-            <Sparkles className="h-3.5 w-3.5" />
-            Ask AI
-          </Button>
+
           
           <Button 
             variant={showFilters || isFiltered ? "default" : "outline"} 
@@ -268,19 +272,28 @@ export default function ContactsPage() {
             <SlidersHorizontal className="h-3.5 w-3.5" />
             Sort: {sortField.charAt(0).toUpperCase() + sortField.slice(1)}
           </Button>
-
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-            Group
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
         </div>
         <div className="flex items-center gap-2">
           <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-card p-0.5">
-            <button className="inline-flex h-6 items-center gap-1 rounded bg-muted/80 px-2 text-xs font-semibold text-foreground">
+            <button 
+              onClick={() => {
+                const p = new URLSearchParams(searchParams.toString());
+                p.set("view", "list");
+                router.push(`${pathname}?${p.toString()}`);
+              }}
+              className={cn("inline-flex h-6 items-center gap-1 rounded px-2 text-xs transition-colors", viewMode === "list" ? "bg-muted/80 font-semibold text-foreground" : "text-muted-foreground")}
+            >
               <List className="h-3.5 w-3.5" />
               List
             </button>
-            <button className="inline-flex h-6 items-center gap-1 rounded px-2 text-xs text-muted-foreground">
+            <button 
+              onClick={() => {
+                const p = new URLSearchParams(searchParams.toString());
+                p.set("view", "gallery");
+                router.push(`${pathname}?${p.toString()}`);
+              }}
+              className={cn("inline-flex h-6 items-center gap-1 rounded px-2 text-xs transition-colors", viewMode === "gallery" ? "bg-muted/80 font-semibold text-foreground" : "text-muted-foreground")}
+            >
               <LayoutGrid className="h-3.5 w-3.5" />
               Gallery
             </button>
@@ -466,18 +479,49 @@ export default function ContactsPage() {
           {error ? (
             <div className="p-4"><p className="text-sm text-destructive">{(error as Error).message}</p></div>
           ) : isLoading ? (
-            <div className="p-4"><p className="text-sm text-muted-foreground">Loading contacts…</p></div>
+            <table className="w-full min-w-[1020px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground select-none">
+                  <th className="w-8 py-2.5">
+                    <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" disabled />
+                  </th>
+                  <th className="py-2.5 pr-4">Name</th>
+                  <th className="py-2.5 pr-4">Company</th>
+                  <th className="py-2.5 pr-4">Role</th>
+                  <th className="py-2.5 pr-4">Stage</th>
+                  <th className="py-2.5 pr-4">Source</th>
+                  <th className="py-2.5 pr-4">Email</th>
+                  <th className="py-2.5 pr-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b border-border/50">
+                    <td className="w-8 py-2.5"><Skeleton className="h-3.5 w-3.5 rounded" /></td>
+                    <td className="py-2.5 pr-4">
+                      <div className="flex items-center gap-2.5">
+                        <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+                        <Skeleton className="h-4 w-32" />
+                      </div>
+                    </td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-4 w-28" /></td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-4 w-24" /></td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-5 w-20 rounded-full" /></td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-4 w-20" /></td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-4 w-36" /></td>
+                    <td className="py-2.5 pr-4 text-right"><Skeleton className="h-7 w-7 rounded-md ml-auto" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : rows.length === 0 ? (
             <div className="p-4"><p className="text-sm text-muted-foreground">No contacts yet.</p></div>
           ) : filteredAndSortedRows.length === 0 ? (
-            <div className="p-8 text-center space-y-3">
-              <p className="text-sm font-medium text-muted-foreground">No contacts match the selected search or filter criteria.</p>
-              <Button size="sm" variant="outline" onClick={() => { setSelectedStage("all"); setSearchQuery(""); }}>
-                Reset Filters
-              </Button>
-            </div>
+            <p className="text-sm text-muted-foreground">No contacts found.</p>
+          ) : viewMode === "gallery" ? (
+            <ContactsGallery contacts={filteredAndSortedRows} leads={leads} />
           ) : (
-            <table className="w-full min-w-[1020px] border-collapse text-sm">
+            <table className="w-full min-w-[920px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground select-none">
                   <th className="w-8 py-2.5">
@@ -556,10 +600,14 @@ export default function ContactsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredAndSortedRows.map((c) => {
+                {filteredAndSortedRows.map((c, index) => {
                   const stage = contactPipelineStage(c, leads);
                   return (
-                  <tr key={c.id} className="border-b border-border/50 group hover:bg-muted/30 transition-colors">
+                  <tr 
+                    key={c.id} 
+                    className="border-b border-border/50 group hover:bg-muted/30 transition-colors animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
                     <td className="w-8 py-2.5">
                       <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" />
                     </td>

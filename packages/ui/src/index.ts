@@ -6,3 +6,4 @@ export * from "./components/badge";
 export * from "./components/sheet";
 export * from "./components/drawer";
 export * from "./components/dropdown-menu";
+export * from "./components/skeleton";

@@ -17,7 +17,7 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { scoreTier, type CompanyRow, type ContactRow, type LeadWithOpportunities, type TaskRow, type MeetingRow } from "@dracara/types";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn } from "@dracara/ui";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn, Skeleton } from "@dracara/ui";
 import {
   ArrowRight,
   Bell,
@@ -139,7 +139,32 @@ export default function ContactDetailsPage() {
   );
 
   if (isLoading) {
-    return <div className="p-8 text-center text-muted-foreground">Loading contact details...</div>;
+    return (
+      <div className="w-full space-y-4 pb-12 pt-2">
+        <Skeleton className="h-5 w-32" />
+        <div className="flex flex-col gap-4 p-4 sm:p-5 md:flex-row md:items-start rounded-xl border border-border/70 bg-card shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+          <Skeleton className="h-16 w-16 shrink-0 rounded-xl" />
+          <div className="min-w-0 flex-1 space-y-3">
+            <Skeleton className="h-7 w-64" />
+            <Skeleton className="h-5 w-40" />
+            <div className="flex gap-2 pt-3">
+              <Skeleton className="h-9 w-24 rounded-lg" />
+              <Skeleton className="h-9 w-24 rounded-lg" />
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 pt-4">
+          <Skeleton className="h-28 w-full rounded-xl" />
+          <Skeleton className="h-28 w-full rounded-xl" />
+          <Skeleton className="h-28 w-full rounded-xl" />
+          <Skeleton className="h-28 w-full rounded-xl" />
+        </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Skeleton className="h-64 w-full rounded-xl lg:col-span-2" />
+          <Skeleton className="h-64 w-full rounded-xl" />
+        </div>
+      </div>
+    );
   }
 
   if (contactError || !contact) {
@@ -179,7 +204,7 @@ export default function ContactDetailsPage() {
   const tier = primaryLead ? scoreTier(leadScore(primaryLead)) : null;
 
   return (
-    <div className="w-full space-y-4 pb-12 pt-2">
+    <div className="w-full space-y-4 pb-12 pt-2 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both">
       <div className="flex items-center gap-2">
         <Link 
           href="/contacts" 

@@ -37,6 +37,9 @@ class CurrentUser(APIModel):
         description="'<resource>.<action>' keys this user's role holds, e.g. 'leads.write'."
     )
     organization_id: str
+    organization_name: str = Field(
+        default="", description="Display name of the user's organization."
+    )
     avatar_url: str | None = None
     is_active: bool = True
 

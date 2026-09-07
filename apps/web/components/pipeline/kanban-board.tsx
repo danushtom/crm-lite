@@ -1,7 +1,7 @@
 "use client";
 
 import { DndContext, DragEndEvent, DragOverlay, PointerSensor, closestCorners, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
-import { Badge, Card, CardContent, cn } from "@dracara/ui";
+import { Badge, Card, CardContent, Skeleton, cn } from "@dracara/ui";
 import type { LeadRow, OpportunityRow } from "@dracara/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiMutation } from "@/lib/use-api-mutation";
@@ -126,7 +126,7 @@ function DraggableOpportunity({ opp }: { opp: OpportunityWithLead }) {
   );
 }
 
-function GroupColumn({ column, rows }: { column: OpportunityKanbanColumn; rows: OpportunityWithLead[] }) {
+function GroupColumn({ column, rows, index }: { column: OpportunityKanbanColumn; rows: OpportunityWithLead[]; index?: number }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
   return (
     <div
@@ -134,8 +134,10 @@ function GroupColumn({ column, rows }: { column: OpportunityKanbanColumn; rows: 
       className={cn(
         "flex min-h-[min(420px,70vh)] w-[min(100vw-2rem,280px)] shrink-0 flex-col rounded-2xl border shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:w-72",
         column.columnShellClass,
-        isOver && "ring-2 ring-[hsl(var(--primary))]/35"
+        isOver && "ring-2 ring-[hsl(var(--primary))]/35",
+        index !== undefined && "animate-in fade-in zoom-in-95 duration-500 fill-mode-both"
       )}
+      style={index !== undefined ? { animationDelay: `${index * 50}ms` } : undefined}
     >
       <div
         className={cn(
@@ -244,10 +246,43 @@ export function KanbanBoard() {
     >
       <div className="-mx-1 flex gap-3 overflow-x-auto pb-2 pt-1 md:-mx-0">
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading opportunities…</p>
+          <>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex min-h-[min(420px,70vh)] w-[min(100vw-2rem,280px)] shrink-0 flex-col rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] dark:border-border dark:bg-card sm:w-72"
+              >
+                <div className="sticky top-0 z-10 rounded-t-2xl border-b border-[#E5E7EB] px-3 py-2.5 dark:border-border">
+                  <Skeleton className="h-4 w-24" />
+                </div>
+                <div className="flex flex-1 flex-col gap-2.5 p-2">
+                  {Array.from({ length: 3 }).map((_, j) => (
+                    <Card key={j} className="overflow-hidden rounded-xl border-[#E5E7EB] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)] dark:border-border dark:bg-card">
+                      <CardContent className="p-3">
+                        <div className="flex gap-3">
+                          <Skeleton className="h-11 w-11 shrink-0 rounded-lg" />
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <Skeleton className="h-4 w-28" />
+                              <Skeleton className="h-3 w-10 shrink-0" />
+                            </div>
+                            <Skeleton className="h-3 w-20" />
+                            <div className="flex items-center gap-2 pt-1">
+                              <Skeleton className="h-5 w-24" />
+                              <Skeleton className="h-5 w-16" />
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </>
         ) : (
-          OPPORTUNITY_KANBAN_COLUMNS.map((column) => (
-            <GroupColumn key={column.id} column={column} rows={byColumn.get(column.id) ?? []} />
+          OPPORTUNITY_KANBAN_COLUMNS.map((column, i) => (
+            <GroupColumn key={column.id} column={column} index={i} rows={byColumn.get(column.id) ?? []} />
           ))
         )}
       </div>
