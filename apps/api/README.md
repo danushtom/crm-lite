@@ -57,21 +57,35 @@ Tokens are verified against the project JWKS for asymmetric signing keys (ES256/
 current Supabase default) or a shared secret for legacy HS256 projects. **Unverified decoding is
 never performed** — a token whose signature cannot be checked is rejected.
 
-Roles live on the `public.users` row, not in the token, so `deps.require_roles(...)` loads the
-profile. `AdminDep` gates admin-only routes; `NonPartnerDep` blocks partners from editing CRM
-intelligence.
+Roles are not in the token and are not a fixed enum. Each organization owns its own `roles`
+table (a `grants_full_access` flag, plus a checklist of granted permissions from a shared
+`permissions` catalog) — an admin can rename, edit, delete, or create roles from the "User
+management" screen. `deps.get_current_profile()` loads the caller's profile with their role and
+its permissions embedded in one query. `AdminDep` (an alias for `require_full_access`) gates
+routes that require `grants_full_access`; `require_permission("<resource>.<action>")` gates
+routes on a specific granted permission instead, e.g. `require_permission("lead_intelligence.write")`
+on the endpoint that used to be a hardcoded partner check. See `supabase/migrations/
+20260905160000_dynamic_roles.sql` for the schema and `app/api/deps.py` for the dependencies.
+
+One route family is authenticated differently: `api/v1/endpoints/voice_webhooks.py` receives
+callbacks from an external voice-calling platform, not a logged-in user, so it carries no
+`Authorization` header at all and is verified instead by an HMAC signature
+(`app/core/webhook_security.py`). It is the one deliberate exception the contract test
+(`tests/test_api_contract.py`) allows to a bearer-token security requirement.
 
 ## Running it
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn app.main:app --reload --port 8000
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt      # Windows: .venv\Scripts\pip
+.venv/bin/uvicorn app.main:app --reload --port 8000   # Windows: .venv\Scripts\uvicorn
 ```
 
-Interactive docs at `/docs`, the schema at `/openapi.json`.
+Interactive docs at `/docs`, the schema at `/openapi.json`. See `../../SETUP.md` for full
+environment-variable and Supabase setup instructions.
 
 ```bash
-.venv/bin/python -m pytest -q
+.venv/bin/python -m pytest -q      # Windows: .venv\Scripts\python
 ```
 
 `tests/test_api_contract.py` enforces the conventions above — that every route is versioned,
