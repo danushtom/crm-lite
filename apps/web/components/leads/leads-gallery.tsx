@@ -5,14 +5,19 @@ import { Calendar, Building, User, Target, CircleDollarSign } from "lucide-react
 import { cn } from "@dracara/ui";
 import Link from "next/link";
 
+/** Keyed by the `lead_stage` enum values the API actually returns, not display labels. */
 const STAGE_COLORS: Record<string, string> = {
-  new: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  contacted: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
-  discovery: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
-  demo: "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300",
-  proposal: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  prospect: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  contacting: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+  discovery_scheduled: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
+  requirements_gathering: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300",
+  solution_design: "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300",
+  proposal_sent: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
   negotiation: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
   won: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+  delivery_transition: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",
+  on_hold: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  followup_later: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
   lost: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
 };
 
@@ -30,10 +35,14 @@ export type LeadGalleryRow = {
   projectType: string;
   companyName: string;
   contactName: string;
+  /** Display label, e.g. "Proposal sent". */
   stage: string;
+  /** The raw `lead_stage` enum value, used for the badge colour. */
+  rawStage: string | null;
   value: number;
   currency: string;
   score: number;
+  /** Raw ISO date or null -- never a pre-formatted string. */
   nextFollowup: string | null;
 };
 
@@ -45,7 +54,8 @@ export function LeadsGallery({ leads }: { leads: LeadGalleryRow[] }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
       {leads.map((lead, index) => {
-        const stage = lead.stage || "new";
+        const stage = lead.stage || "No pursuit";
+        const stageKey = (lead.rawStage ?? "").toLowerCase();
         const score = lead.score;
         const value = lead.value;
         const currency = lead.currency;
@@ -66,7 +76,7 @@ export function LeadsGallery({ leads }: { leads: LeadGalleryRow[] }) {
                   <Building className="h-3 w-3" /> {lead.companyName}
                 </p>
               </div>
-              <Badge className={cn("capitalize px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap", STAGE_COLORS[stage.toLowerCase()] || "bg-gray-100 text-gray-700")}>
+              <Badge className={cn("capitalize px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap", STAGE_COLORS[stageKey] || "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300")}>
                 {stage}
               </Badge>
             </div>

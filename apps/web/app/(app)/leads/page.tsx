@@ -1,31 +1,41 @@
 "use client";
 
 import type { CompanyRow, ContactRow, LeadWithOpportunities } from "@dracara/types";
-import { Badge, Button, Card, CardContent, Skeleton } from "@dracara/ui";
+import { Badge, Button, Card, CardContent, Input, Skeleton } from "@dracara/ui";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronsUpDown,
   Clock3,
-  Filter,
   LayoutGrid,
   List,
-  Plus,
-  SlidersHorizontal,
+  Search,
   Sparkles,
   Target,
   WalletCards,
+  X,
 } from "lucide-react";
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { apiListAll } from "@/lib/api";
 import { AddLeadDrawer } from "@/components/leads/add-lead-drawer";
 import { AskAiDrawer } from "@/components/ai/ask-ai-drawer";
 import { LeadsGallery } from "@/components/leads/leads-gallery";
+import { TablePagination } from "@/components/shared/table-pagination";
+import { compareValues, usePagination, useSort } from "@/lib/use-table-controls";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { cn } from "@dracara/ui";
 import { leadCurrency, leadScore, leadStage, leadValue } from "@/lib/leads";
+
+type LeadSortKey = "projectType" | "stage" | "score" | "value" | "source" | "nextFollowup";
+
+const SORTABLE_COLUMNS: { key: LeadSortKey; label: string }[] = [
+  { key: "projectType", label: "Project Name" },
+  { key: "stage", label: "Stage" },
+  { key: "score", label: "Score" },
+  { key: "value", label: "Value" },
+  { key: "source", label: "Source" },
+  { key: "nextFollowup", label: "Next Follow-up" },
+];
 
 type LeadWithCo = LeadWithOpportunities & {
   companies?: { name?: string; segment?: string | null } | null;
@@ -68,6 +78,9 @@ export default function LeadsPage() {
   const viewMode = searchParams.get("view") || "list";
 
   const [showAi, setShowAi] = useState(false);
+  // Seeded from ?q= so the global search in the top bar lands here with its term applied.
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") ?? "");
+  const { sortKey, sortDirection, toggleSort } = useSort<LeadSortKey>("score", "desc");
   const { data: leads = [], isLoading: leadsLoading, error: leadsError } = useQuery({
     queryKey: ["leads", "leads-page"],
     queryFn: () => apiListAll<LeadWithCo>("/leads"),
@@ -108,10 +121,36 @@ export default function LeadsPage() {
         currency: leadCurrency(lead),
         source: sourceStr.charAt(0).toUpperCase() + sourceStr.slice(1),
         score: leadScore(lead),
-        nextFollowup: lead.next_followup_date ? new Date(lead.next_followup_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : "Not set"
+        // Raw ISO date, not a display string: the gallery formats it as a relative distance
+        // and would throw on a pre-formatted value (new Date("Not set") is an Invalid Date).
+        nextFollowup: lead.next_followup_date ?? null,
+        nextFollowupLabel: lead.next_followup_date
+          ? new Date(lead.next_followup_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+          : "Not set",
       };
-    }).sort((a, b) => b.score - a.score);
+    });
   }, [leads, contacts]);
+
+  const searchedRows = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(
+      (r) =>
+        r.projectType.toLowerCase().includes(q) ||
+        r.companyName.toLowerCase().includes(q) ||
+        r.contactName.toLowerCase().includes(q) ||
+        r.stage.toLowerCase().includes(q) ||
+        r.source.toLowerCase().includes(q)
+    );
+  }, [rows, searchQuery]);
+
+  const sortedRows = useMemo(() => {
+    return [...searchedRows].sort((a, b) =>
+      compareValues(a[sortKey as keyof typeof a], b[sortKey as keyof typeof b], sortDirection)
+    );
+  }, [searchedRows, sortKey, sortDirection]);
+
+  const pagination = usePagination(sortedRows);
 
   const summary = useMemo(() => {
     const totalValue = rows.reduce((sum, row) => sum + row.value, 0);
@@ -148,6 +187,26 @@ export default function LeadsPage() {
       <div className="-mt-1 space-y-3">
         <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search leads…"
+                aria-label="Search leads"
+                className="h-8 w-full rounded-md border-border/70 pl-8 pr-8 text-xs sm:w-64"
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
             <Button
               type="button"
               size="sm"
@@ -273,63 +332,42 @@ export default function LeadsPage() {
           ) : (
               <table className="w-full min-w-[920px] border-collapse text-sm">
               <thead>
-                  <tr className="border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground">
-                    <th className="w-8 py-2.5">
-                      <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" />
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Project Name
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Stage
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Score
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Value
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Source
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Next Follow-up
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
+                  <tr className="border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground select-none">
+                    {SORTABLE_COLUMNS.map((col) => (
+                      <th
+                        key={col.key}
+                        className="cursor-pointer py-2.5 pr-4 hover:text-foreground"
+                        onClick={() => toggleSort(col.key)}
+                        aria-sort={
+                          sortKey === col.key
+                            ? sortDirection === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
+                      >
+                        <div className="inline-flex items-center gap-1.5">
+                          {col.label}
+                          <ChevronsUpDown
+                            className={cn("h-3 w-3", sortKey === col.key && "text-foreground")}
+                          />
+                        </div>
+                      </th>
+                    ))}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((lead, index) => (
-                  <tr 
-                    key={lead.id} 
-                    className="border-b border-border/50 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
+                {pagination.pageRows.map((lead, index) => (
+                  <tr
+                    key={lead.id}
+                    className="group border-b border-border/50 transition-colors hover:bg-muted/30 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
-                      <td className="w-8 py-2.5">
-                        <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" />
-                      </td>
                       <td className="py-2.5 pr-4">
                         <div className="leading-tight">
-                          <a href={`/leads/${lead.id}`} className="text-[13px] font-semibold text-[#111827] underline-offset-2 hover:underline dark:text-slate-100">
+                          <Link href={`/leads/${lead.id}`} className="text-[13px] font-semibold text-foreground underline-offset-2 hover:underline">
                             {lead.projectType} at {lead.companyName}
-                          </a>
+                          </Link>
                           <p className="text-[11px] text-muted-foreground mt-0.5">{lead.contactName}</p>
                         </div>
                       </td>
@@ -347,7 +385,7 @@ export default function LeadsPage() {
                         {lead.value > 0 ? formatCompactCurrency(lead.value, lead.currency) : "—"}
                       </td>
                       <td className="py-2.5 pr-4 text-muted-foreground">{lead.source}</td>
-                      <td className="py-2.5 pr-4 text-muted-foreground">{lead.nextFollowup}</td>
+                      <td className="py-2.5 pr-4 text-muted-foreground">{lead.nextFollowupLabel}</td>
                   </tr>
                 ))}
               </tbody>
@@ -356,35 +394,16 @@ export default function LeadsPage() {
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-between px-1 pb-1">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Showing</span>
-          <button className="inline-flex h-8 items-center gap-1 rounded-md border border-border/70 bg-white px-2 text-xs font-medium text-foreground dark:bg-card">
-            10 per page
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 bg-white text-muted-foreground dark:bg-card">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          {[1, 2, 3].map((n) => (
-            <button
-              key={n}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm ${
-                n === 1
-                  ? "border-[#0A1128] bg-[#0A1128] font-semibold text-white"
-                  : "border-border/70 bg-white text-foreground dark:bg-card"
-              }`}
-            >
-              {n}
-            </button>
-          ))}
-          <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 bg-white text-muted-foreground dark:bg-card">
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+      {viewMode === "list" ? (
+        <TablePagination
+          page={pagination.page}
+          pageCount={pagination.pageCount}
+          pageSize={pagination.pageSize}
+          total={pagination.total}
+          onPageChange={pagination.setPage}
+          onPageSizeChange={pagination.setPageSize}
+        />
+      ) : null}
       </div>
     </>
   );

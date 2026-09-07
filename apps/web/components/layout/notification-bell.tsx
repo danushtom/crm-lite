@@ -43,7 +43,18 @@ export function NotificationBell() {
     retry: 1,
   });
 
-  const unread = notifications.filter((n) => !n.read_at);
+  // The badge counts every unread notification, not just the twenty in the dropdown. The
+  // endpoint is a cheap count query and was previously unused, so the badge quietly capped at
+  // whatever happened to be in the first page.
+  const { data: unreadCount } = useQuery({
+    queryKey: ["notifications", "unread-count"],
+    queryFn: () => apiFetch<{ unread: number }>("/notifications/unread-count"),
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  const unreadInList = notifications.filter((n) => !n.read_at);
+  const unread = unreadCount?.unread ?? unreadInList.length;
 
   const markRead = useMutation({
     mutationFn: (id: string) =>
@@ -65,12 +76,12 @@ export function NotificationBell() {
           variant="ghost"
           size="icon"
           className="relative h-9 w-9 shrink-0 text-muted-foreground"
-          aria-label={unread.length ? `Notifications (${unread.length} unread)` : "Notifications"}
+          aria-label={unread ? `Notifications (${unread} unread)` : "Notifications"}
         >
           <Bell className="h-[18px] w-[18px]" />
-          {unread.length > 0 ? (
+          {unread > 0 ? (
             <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-white">
-              {unread.length > 9 ? "9+" : unread.length}
+              {unread > 9 ? "9+" : unread}
             </span>
           ) : null}
         </Button>
@@ -78,7 +89,7 @@ export function NotificationBell() {
       <DropdownMenuContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between px-3 py-2">
           <DropdownMenuLabel className="p-0 text-sm">Notifications</DropdownMenuLabel>
-          {unread.length > 0 ? (
+          {unread > 0 ? (
             <Button
               variant="ghost"
               size="sm"

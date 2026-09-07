@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Response, status
 
 from app.api.deps import AdminDep, DbDep
-from app.core.concurrency import IfMatchDep, set_etag, update_guarded
+from app.core.concurrency import IfMatchDep, PreconditionFailedError, set_etag, update_guarded
 from app.core.errors import ForbiddenError, UnprocessableError
 from app.schemas.common import ERROR_RESPONSES
 from app.schemas.roles import Permission, Role, RoleCreate, RoleUpdate
@@ -118,6 +118,28 @@ async def create_role(body: RoleCreate, db: DbDep, _admin: AdminDep, response: R
     return _role_from_row(row, Counter())
 
 
+@router.get(
+    "/{role_id}",
+    response_model=Role,
+    summary="Get one role",
+    description="Returns the role with its permission grants and current holder count.",
+    responses=ERROR_RESPONSES,
+)
+async def get_role(role_id: str, db: DbDep, response: Response) -> Role:
+    result = await db.select(
+        "roles",
+        params={
+            "select": "*,role_permissions(permissions(resource,action))",
+            "id": f"eq.{role_id}",
+        },
+    )
+    row = result.one("Role")
+    users_result = await db.select("users", params={"select": "role_id", "role_id": f"eq.{role_id}"})
+    user_counts: Counter[str] = Counter(u["role_id"] for u in users_result.rows)
+    set_etag(response, row)
+    return _role_from_row(row, user_counts)
+
+
 @router.patch(
     "/{role_id}",
     response_model=Role,
@@ -140,10 +162,19 @@ async def update_role(
     permission_keys = changes.pop("permission_keys", None)
 
     if changes:
-        row = await update_guarded(db, "roles", record_id=role_id, changes=changes, if_match=if_match, what="Role")
+        await update_guarded(db, "roles", record_id=role_id, changes=changes, if_match=if_match, what="Role")
     else:
-        existing = await db.select("roles", params={"select": "*", "id": f"eq.{role_id}"})
-        row = existing.one("Role")
+        # Permissions-only edit: no column on `roles` changes, so update_guarded never runs and
+        # would never see the caller's If-Match. Check the precondition explicitly rather than
+        # silently ignoring it.
+        existing = await db.select("roles", params={"select": "id,version", "id": f"eq.{role_id}"})
+        current = existing.one("Role")
+        if isinstance(if_match, int) and current.get("version") != if_match:
+            raise PreconditionFailedError(
+                f"Role has been modified since you last read it (expected version {if_match}, "
+                f"current version {current.get('version')}). Refetch and reapply your changes.",
+                extra={"current_version": current.get("version")},
+            )
 
     if permission_keys is not None:
         permission_ids = await _resolve_permission_ids(db, permission_keys)
@@ -164,7 +195,10 @@ async def update_role(
     users_result = await db.select("users", params={"select": "role_id", "role_id": f"eq.{role_id}"})
     user_counts: Counter[str] = Counter(u["role_id"] for u in users_result.rows)
     final_row = full.one("Role")
-    set_etag(response, row)
+    # Tag the row we are actually returning, not the pre-rewrite `row`: on a permissions-only
+    # edit `row` came from a SELECT taken before role_permissions was rewritten, so the client
+    # would cache a version the row had already moved past and 412 on its next PATCH.
+    set_etag(response, final_row)
     return _role_from_row(final_row, user_counts)
 
 

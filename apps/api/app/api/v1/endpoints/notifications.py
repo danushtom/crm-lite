@@ -10,7 +10,12 @@ from fastapi import APIRouter, Query, Response, status
 from app.api.deps import CurrentUserDep, DbDep
 from app.core.pagination import Page, PageParamsDep
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
-from app.schemas.notifications import Notification, NotificationReadResult, NotificationUpdate
+from app.schemas.notifications import (
+    Notification,
+    NotificationReadResult,
+    NotificationUnreadCount,
+    NotificationUpdate,
+)
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
@@ -42,18 +47,18 @@ async def list_notifications(
 
 @router.get(
     "/unread-count",
-    response_model=NotificationReadResult,
+    response_model=NotificationUnreadCount,
     summary="Count unread notifications",
     description="Cheap poll target for the notification bell; avoids fetching full rows.",
     responses=AUTH_RESPONSES,
 )
-async def unread_count(db: DbDep) -> NotificationReadResult:
+async def unread_count(db: DbDep) -> NotificationUnreadCount:
     result = await db.select(
         "notifications",
         params={"select": "id", "read_at": "is.null", "limit": "1"},
         count=True,
     )
-    return NotificationReadResult(updated=result.count or 0)
+    return NotificationUnreadCount(unread=result.count or 0)
 
 
 @router.post(

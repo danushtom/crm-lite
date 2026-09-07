@@ -29,3 +29,11 @@ class NotificationUpdate(StrictAPIModel):
 
 class NotificationReadResult(APIModel):
     updated: int = Field(description="Number of notifications transitioned to read.")
+
+
+class NotificationUnreadCount(APIModel):
+    """Deliberately not NotificationReadResult: that model's `updated` field documents rows
+    transitioned to read, and this endpoint transitions nothing -- reusing it made the
+    generated OpenAPI schema describe the value incorrectly."""
+
+    unread: int = Field(description="Number of notifications the caller has not yet read.")

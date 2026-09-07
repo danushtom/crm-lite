@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { Button, Input } from "@dracara/ui";
 import { useEffect, useState } from "react";
@@ -15,20 +15,34 @@ const TITLE_MAP: { prefix: string; title: string }[] = [
   { prefix: "/contacts", title: "Contacts" },
   { prefix: "/follow-ups", title: "Follow-ups" },
   { prefix: "/calendar", title: "Calendar" },
-  { prefix: "/agents", title: "Agents" },
+  { prefix: "/voice-agents", title: "AI Agents" },
+  { prefix: "/agents", title: "User management" },
   { prefix: "/reports", title: "Reports" },
   { prefix: "/settings", title: "Settings" },
   { prefix: "/leads", title: "Leads" },
 ];
+
+/** List pages that read `?q=` to seed their own search box. */
+const SEARCHABLE_LISTS = ["/contacts", "/leads", "/companies"];
 
 function pageTitle(pathname: string): string {
   const hit = TITLE_MAP.find((t) => pathname === t.prefix || pathname.startsWith(t.prefix + "/"));
   return hit?.title ?? "Dracara";
 }
 
+/**
+ * Where a global search lands. There is no cross-entity search endpoint, so rather than
+ * pretend otherwise this searches the list you are already on, and falls back to Contacts.
+ */
+function searchTarget(pathname: string): string {
+  return SEARCHABLE_LISTS.find((p) => pathname.startsWith(p)) ?? "/contacts";
+}
+
 export function AppTopBar() {
   const pathname = usePathname();
+  const router = useRouter();
   const title = pageTitle(pathname);
+  const [query, setQuery] = useState("");
   const [updatedLabel, setUpdatedLabel] = useState("—");
 
   useEffect(() => {
@@ -50,10 +64,24 @@ export function AppTopBar() {
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <NotificationBell />
-            <div className="relative min-w-[180px] flex-1 md:min-w-[240px] lg:w-72 xl:w-80">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const term = query.trim();
+                if (!term) return;
+                router.push(`${searchTarget(pathname)}?q=${encodeURIComponent(term)}`);
+              }}
+              className="relative min-w-[180px] flex-1 md:min-w-[240px] lg:w-72 xl:w-80"
+            >
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search something…" className="h-9 rounded-lg border-border bg-muted/30 pl-9 shadow-inner" />
-            </div>
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search contacts, leads, companies…"
+                aria-label="Search"
+                className="h-9 rounded-lg border-border bg-muted/30 pl-9 shadow-inner"
+              />
+            </form>
             <ExportButton />
           </div>
         </div>

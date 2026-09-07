@@ -275,6 +275,7 @@ async def update_intelligence(
     db: DbDep,
     response: Response,
     user: CurrentUserDep,
+    if_match: IfMatchDep,
     _guard: Annotated[dict, Depends(require_permission("lead_intelligence.write"))],
 ) -> LeadIntelligence:
     changes = body.changes()
@@ -282,8 +283,19 @@ async def update_intelligence(
         return await get_intelligence(lead_id, db, response)
 
     changes["updated_by"] = user.sub
-    result = await db.update("lead_intelligence", {"lead_id": f"eq.{lead_id}"}, changes)
-    updated = result.one("Lead intelligence")
+    # Keyed by lead_id, not id: this panel is 1:1 with its lead. Without the guard, two reps
+    # editing the free-text strategy notes silently overwrite each other -- the most
+    # collision-prone field in the product, and the one this route used to leave unprotected
+    # while still advertising a version/ETag.
+    updated = await update_guarded(
+        db,
+        "lead_intelligence",
+        record_id=lead_id,
+        changes=changes,
+        if_match=if_match,
+        what="Lead intelligence",
+        id_column="lead_id",
+    )
     set_etag(response, updated)
 
     pursuits = await db.select(

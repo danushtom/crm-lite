@@ -61,3 +61,10 @@ class MeetingUpdate(PatchModel):
     duration_minutes: int | None = Field(default=None, ge=5, le=8 * 60)
     status: MeetingStatus | None = None
     google_meet_link: str | None = Field(default=None, max_length=500)
+    owner_id: str | None = Field(
+        default=None,
+        description=(
+            "Hand the meeting to another teammate. Without this, deactivating someone left "
+            "their scheduled meetings owned by an inactive user and out of every queue."
+        ),
+    )

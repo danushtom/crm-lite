@@ -404,7 +404,7 @@ export default function LeadOverviewPage() {
                 Sales intelligence
               </CardTitle>
               <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs text-[#0B7FB3]" asChild>
-                <Link href={`/leads/${id}/intelligence`}>
+                <Link href={`/leads/${id}/notes`}>
                   Manage
                   <ChevronRight className="h-3.5 w-3.5" />
                 </Link>
@@ -425,7 +425,7 @@ export default function LeadOverviewPage() {
                   </div>
                   <p className="mt-3 text-sm text-muted-foreground">No intelligence data yet.</p>
                   <Button variant="link" size="sm" className="mt-1 h-auto text-xs text-[#0B7FB3]" asChild>
-                    <Link href={`/leads/${id}/intelligence`}>Add notes</Link>
+                    <Link href={`/leads/${id}/notes`}>Add notes</Link>
                   </Button>
                 </div>
               )}

@@ -1,11 +1,20 @@
 import * as React from "react";
 import { cn } from "../lib/utils";
 
+/**
+ * The default shell matches the Contacts pages, which are the app's design reference: a
+ * softened border and a low, flat shadow. Pages previously had to opt in by hand-writing
+ * `border-border/70 shadow-[0_1px_3px_rgba(15,23,42,0.06)]`, and the ones that forgot rendered
+ * a visibly heavier card. Passing a className still overrides either token (tailwind-merge).
+ */
 export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("rounded-xl border border-border bg-card text-card-foreground shadow-sm", className)}
+      className={cn(
+        "rounded-xl border border-border/70 bg-card text-card-foreground shadow-[0_1px_3px_rgba(15,23,42,0.06)]",
+        className
+      )}
       {...props}
     />
   )

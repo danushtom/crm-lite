@@ -147,6 +147,95 @@ def test_updating_a_voice_agents_phone_number_releases_the_old_one(authed_client
     assert assigned and assigned[0][2]["params"]["id"] == "eq.pn-new"
 
 
+def test_a_phone_number_can_be_released(authed_client, fake_db, test_user):
+    as_admin(fake_db, test_user)
+    fake_db.responses["GET phone_numbers"] = FakeResult({"id": "pn-1", "assigned_voice_agent_id": None})
+    fake_db.responses["DELETE phone_numbers"] = FakeResult([{"id": "pn-1"}])
+
+    response = authed_client.delete(f"{V1}/voice-agents/phone-numbers/pn-1")
+
+    assert response.status_code == 204
+
+
+def test_releasing_a_number_still_assigned_to_an_agent_is_refused(authed_client, fake_db, test_user):
+    """Deleting it out from under an agent would silently break inbound routing, which
+    resolves an incoming call purely through phone_numbers.assigned_voice_agent_id."""
+    as_admin(fake_db, test_user)
+    fake_db.responses["GET phone_numbers"] = FakeResult({"id": "pn-1", "assigned_voice_agent_id": "va-1"})
+
+    response = authed_client.delete(f"{V1}/voice-agents/phone-numbers/pn-1")
+
+    assert response.status_code == 409
+    assert not [c for c in fake_db.calls if c[0] == "DELETE" and c[1] == "phone_numbers"]
+
+
+def test_a_non_admin_cannot_release_a_phone_number(authed_client, fake_db, test_user):
+    as_agent(fake_db, test_user)
+
+    response = authed_client.delete(f"{V1}/voice-agents/phone-numbers/pn-1")
+
+    assert response.status_code == 403
+    assert not [c for c in fake_db.calls if c[0] == "DELETE" and c[1] == "phone_numbers"]
+
+
+# --- Call log -----------------------------------------------------------------------
+
+
+CALL_ROW = {
+    "id": "call-1",
+    "voice_agent_id": "va-1",
+    "contact_id": "contact-1",
+    "lead_id": None,
+    "direction": "outbound",
+    "status": "completed",
+    "to_number": "+14155550100",
+    "from_number": "+14155550199",
+    "started_at": None,
+    "ended_at": None,
+    "duration_seconds": 42,
+    "outcome": None,
+    "created_at": None,
+}
+
+
+def test_the_call_log_passes_its_filters_through_to_the_query(authed_client, fake_db, test_user):
+    """The call log is unusable without these: an org with several agents and months of history
+    could only ever page through everything in one undifferentiated list."""
+    as_agent(fake_db, test_user)
+    fake_db.responses["GET calls"] = FakeResult([CALL_ROW], count=1)
+
+    response = authed_client.get(
+        f"{V1}/voice-agents/calls?voice_agent_id=va-1&status=completed&direction=outbound&lead_id=lead-9"
+    )
+
+    assert response.status_code == 200
+    params = [c for c in fake_db.calls if c[0] == "GET" and c[1] == "calls"][0][2]["params"]
+    assert params["voice_agent_id"] == "eq.va-1"
+    assert params["status"] == "eq.completed"
+    assert params["direction"] == "eq.outbound"
+    assert params["lead_id"] == "eq.lead-9"
+
+
+def test_the_call_log_omits_filters_that_were_not_supplied(authed_client, fake_db, test_user):
+    as_agent(fake_db, test_user)
+    fake_db.responses["GET calls"] = FakeResult([CALL_ROW], count=1)
+
+    response = authed_client.get(f"{V1}/voice-agents/calls")
+
+    assert response.status_code == 200
+    params = [c for c in fake_db.calls if c[0] == "GET" and c[1] == "calls"][0][2]["params"]
+    assert "voice_agent_id" not in params
+    assert "status" not in params
+
+
+def test_an_unknown_call_status_filter_is_rejected(authed_client, fake_db, test_user):
+    as_agent(fake_db, test_user)
+
+    response = authed_client.get(f"{V1}/voice-agents/calls?status=not_a_status")
+
+    assert response.status_code == 422
+
+
 # --- Compliance ack -----------------------------------------------------------------
 
 

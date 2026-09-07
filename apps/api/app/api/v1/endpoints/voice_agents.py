@@ -20,11 +20,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 
 from app.api.deps import AdminDbDep, AdminDep, CurrentUserDep, DbDep, ProfileDep, require_permission
+from app.domain.enums import CallDirection, CallStatus
 from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
-from app.core.errors import ForbiddenError, NotConfiguredError
+from app.core.errors import ConflictError, ForbiddenError, NotConfiguredError
 from app.core.pagination import Page, PageParamsDep
 from app.schemas.common import ERROR_RESPONSES
 from app.schemas.voice_agents import (
@@ -221,22 +222,63 @@ async def register_phone_number(body: PhoneNumberCreate, db: DbDep, user: Curren
     return PhoneNumber.model_validate(inserted.one("Phone number"))
 
 
+@router.delete(
+    "/phone-numbers/{phone_number_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Release a registered phone number",
+    description=(
+        "Requires a role with full organization access. Refused with 409 while an agent is "
+        "still assigned this number -- unassign it from the agent first, so releasing a number "
+        "can never silently break inbound routing."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def delete_phone_number(phone_number_id: str, db: DbDep, _admin: AdminDep) -> Response:
+    existing = await db.select(
+        "phone_numbers",
+        params={"select": "id,assigned_voice_agent_id", "id": f"eq.{phone_number_id}"},
+    )
+    row = existing.one("Phone number")
+    if row.get("assigned_voice_agent_id"):
+        raise ConflictError(
+            "This number is assigned to a voice agent; unassign it from the agent first."
+        )
+
+    deleted = await db.delete("phone_numbers", {"id": f"eq.{phone_number_id}"})
+    if deleted.first() is None:
+        raise ForbiddenError("You do not have permission to delete this phone number")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/calls", response_model=Page[CallSummary], summary="List call history", responses=ERROR_RESPONSES)
 async def list_calls(
     db: DbDep,
     page: PageParamsDep,
     _perm: Annotated[dict, Depends(require_permission("voice_agents.read"))],
+    voice_agent_id: Annotated[str | None, Query(description="Restrict to one voice agent.")] = None,
+    lead_id: Annotated[str | None, Query(description="Restrict to calls about one lead.")] = None,
+    contact_id: Annotated[str | None, Query(description="Restrict to calls with one contact.")] = None,
+    call_status: Annotated[CallStatus | None, Query(alias="status")] = None,
+    direction: Annotated[CallDirection | None, Query()] = None,
 ) -> Page[CallSummary]:
-    result = await db.select(
-        "calls",
-        params={
-            "select": "id,voice_agent_id,contact_id,lead_id,direction,status,to_number,from_number,started_at,ended_at,duration_seconds,outcome,created_at",
-            "order": "created_at.desc,id.desc",
-            "limit": str(page.limit),
-            "offset": str(page.offset),
-        },
-        count=True,
-    )
+    params: dict[str, str] = {
+        "select": "id,voice_agent_id,contact_id,lead_id,direction,status,to_number,from_number,started_at,ended_at,duration_seconds,outcome,created_at",
+        "order": "created_at.desc,id.desc",
+        "limit": str(page.limit),
+        "offset": str(page.offset),
+    }
+    if voice_agent_id:
+        params["voice_agent_id"] = f"eq.{voice_agent_id}"
+    if lead_id:
+        params["lead_id"] = f"eq.{lead_id}"
+    if contact_id:
+        params["contact_id"] = f"eq.{contact_id}"
+    if call_status:
+        params["status"] = f"eq.{call_status.value}"
+    if direction:
+        params["direction"] = f"eq.{direction.value}"
+
+    result = await db.select("calls", params=params, count=True)
     return Page.build([CallSummary.model_validate(r) for r in result.rows], page, result.count)
 
 

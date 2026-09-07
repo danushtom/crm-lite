@@ -1,30 +1,43 @@
 "use client";
 
 import type { CompanyRow, ContactRow, LeadWithOpportunities } from "@dracara/types";
-import { Badge, Button, Card, CardContent, Skeleton } from "@dracara/ui";
+import { Badge, Button, Card, CardContent, Input, Skeleton } from "@dracara/ui";
 import { CompanyDrawer } from "@/components/companies/company-drawer";
 import { useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronsUpDown,
   Clock3,
-  Filter,
   LayoutGrid,
+  Linkedin,
   List,
-  Plus,
-  SlidersHorizontal,
-  Sparkles,
+  Search,
   UserPlus,
   WalletCards,
+  X,
 } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { apiListAll } from "@/lib/api";
 import { leadStage, leadValue } from "@/lib/leads";
 import { CompaniesGallery } from "@/components/companies/companies-gallery";
+import { TablePagination } from "@/components/shared/table-pagination";
+import { compareValues, usePagination, useSort } from "@/lib/use-table-controls";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { cn } from "@dracara/ui";
+
+type CompanySortKey = "name" | "stage" | "contactsCount" | "value" | "contactRole";
+
+/** Order here must match the order cells are rendered in the table body. */
+const SORTABLE_COLUMNS: { key: CompanySortKey; label: string }[] = [
+  { key: "name", label: "Company" },
+  { key: "stage", label: "Stage" },
+  { key: "contactsCount", label: "Contacts" },
+  { key: "value", label: "Pipeline value" },
+  { key: "contactRole", label: "Position" },
+];
+
+/** Shared with the contacts page so the two stats strips collapse together. */
+const STATS_COLLAPSED_KEY = "crm-stats-collapsed";
 
 type CompanyStage = "Won" | "Leads" | "Lost" | "Discovery";
 
@@ -70,6 +83,31 @@ export default function CompaniesPage() {
   const searchParams = useSearchParams();
   const viewMode = searchParams.get("view") || "list";
 
+  // Seeded from ?q= so the global search in the top bar lands here with its term applied.
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") ?? "");
+  const [statsCollapsed, setStatsCollapsed] = useState(false);
+  const { sortKey, sortDirection, toggleSort } = useSort<CompanySortKey>("name", "asc");
+
+  useEffect(() => {
+    try {
+      setStatsCollapsed(localStorage.getItem(STATS_COLLAPSED_KEY) === "true");
+    } catch {
+      // Blocked storage: default to expanded.
+    }
+  }, []);
+
+  const toggleStats = () => {
+    setStatsCollapsed((collapsed) => {
+      const next = !collapsed;
+      try {
+        localStorage.setItem(STATS_COLLAPSED_KEY, String(next));
+      } catch {
+        // Non-fatal.
+      }
+      return next;
+    });
+  };
+
   const { data: companies = [], isLoading: companiesLoading, error: companiesError } = useQuery({
     queryKey: ["companies", "list"],
     queryFn: () => apiListAll<CompanyRow>("/companies"),
@@ -111,9 +149,9 @@ export default function CompaniesPage() {
       const stage = leadStageToCompanyStage(
         latestLead ? leadStage(latestLead) ?? undefined : undefined
       );
-      const value =
-        companyLeads.reduce((sum, lead) => sum + (leadValue(lead) ?? 0), 0) ||
-        Math.max(120, (company.name.length % 8) * 80 + 120);
+      // A company with no leads is worth nothing yet -- it is not worth a number derived from
+      // the length of its name, which is what this used to display.
+      const value = companyLeads.reduce((sum, lead) => sum + (leadValue(lead) ?? 0), 0);
 
       return {
         id: company.id,
@@ -124,9 +162,33 @@ export default function CompaniesPage() {
         contactRole: primary?.role ?? "Unassigned",
         contactsCount: companyContacts.length,
         industry: company.industry,
+        website: company.website ?? null,
+        linkedinUrl: company.linkedin_url ?? null,
       };
     });
   }, [companies, contacts, leads]);
+
+  const searchedRows = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        (r.industry ?? "").toLowerCase().includes(q) ||
+        r.contactName.toLowerCase().includes(q) ||
+        r.stage.toLowerCase().includes(q)
+    );
+  }, [rows, searchQuery]);
+
+  const sortedRows = useMemo(
+    () =>
+      [...searchedRows].sort((a, b) =>
+        compareValues(a[sortKey as keyof typeof a], b[sortKey as keyof typeof b], sortDirection)
+      ),
+    [searchedRows, sortKey, sortDirection]
+  );
+
+  const pagination = usePagination(sortedRows);
 
   const summary = useMemo(() => {
     const total = rows.reduce((sum, row) => sum + row.value, 0);
@@ -164,6 +226,26 @@ export default function CompaniesPage() {
     <div className="-mt-1 space-y-3">
       <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search companies…"
+              aria-label="Search companies"
+              className="h-8 w-full rounded-md border-border/70 pl-8 pr-8 text-xs sm:w-64"
+            />
+            {searchQuery ? (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
           <CompanyDrawer />
         </div>
         <div className="flex items-center gap-2">
@@ -191,11 +273,6 @@ export default function CompaniesPage() {
               Gallery
             </button>
           </div>
-          <Button size="sm" className="h-8 gap-1.5 rounded-md bg-[#0A1128] px-3 text-xs font-semibold text-white hover:bg-[#1a2a53]">
-            <Plus className="h-3.5 w-3.5" />
-            Add New
-            <ChevronDown className="h-3.5 w-3.5 text-white/80" />
-          </Button>
         </div>
       </div>
 
@@ -215,26 +292,25 @@ export default function CompaniesPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-                <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
-                History
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-                <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
-                Assign Task
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-                <WalletCards className="h-3.5 w-3.5 text-muted-foreground" />
-                Adjust Spend
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 gap-1 rounded-md border-border/70 px-3 text-xs font-semibold">
-                Collapse
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleStats}
+                aria-expanded={!statsCollapsed}
+                className="h-8 gap-1 rounded-md border-border/70 px-3 text-xs font-semibold"
+              >
+                {statsCollapsed ? "Expand" : "Collapse"}
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 text-muted-foreground transition-transform",
+                    statsCollapsed && "rotate-180"
+                  )}
+                />
               </Button>
             </div>
           </div>
 
-          <div className="grid gap-2 md:grid-cols-4">
+          <div className={cn("grid gap-2 md:grid-cols-4", statsCollapsed && "hidden")}>
             {summary.campaigns.map((campaign) => (
               <div key={campaign.name} className="rounded-sm border border-border/70 bg-white px-3 pb-2 pt-3 dark:bg-card">
                 <div className="flex items-center justify-between">
@@ -264,22 +340,16 @@ export default function CompaniesPage() {
             <table className="w-full min-w-[920px] border-collapse text-sm">
               <thead>
                   <tr className="border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground">
-                    <th className="w-8 py-2.5">
-                      <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" disabled />
-                    </th>
-                    <th className="py-2.5 pr-4">Company</th>
-                    <th className="py-2.5 pr-4">Linkedin</th>
-                    <th className="py-2.5 pr-4">Stage</th>
-                    <th className="py-2.5 pr-4">Contacts</th>
-                    <th className="py-2.5 pr-4">Position</th>
+                    {SORTABLE_COLUMNS.map((col) => (
+                      <th key={col.key} className="py-2.5 pr-4">{col.label}</th>
+                    ))}
+                    <th className="py-2.5 pr-4">Links</th>
                   </tr>
               </thead>
               <tbody>
                 {Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
-                    <td className="w-8 py-2.5"><Skeleton className="h-3.5 w-3.5 rounded" /></td>
                     <td className="py-2.5 pr-4"><Skeleton className="h-4 w-32" /></td>
-                    <td className="py-2.5 pr-4"><Skeleton className="h-4 w-24" /></td>
                     <td className="py-2.5 pr-4"><Skeleton className="h-5 w-20 rounded-full" /></td>
                     <td className="py-2.5 pr-4">
                       <div className="flex items-center gap-2.5">
@@ -290,7 +360,9 @@ export default function CompaniesPage() {
                         </div>
                       </div>
                     </td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-4 w-16" /></td>
                     <td className="py-2.5 pr-4"><Skeleton className="h-4 w-28" /></td>
+                    <td className="py-2.5 pr-4"><Skeleton className="h-4 w-12" /></td>
                   </tr>
                 ))}
               </tbody>
@@ -302,58 +374,39 @@ export default function CompaniesPage() {
           ) : (
               <table className="w-full min-w-[920px] border-collapse text-sm">
               <thead>
-                  <tr className="border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground">
-                    <th className="w-8 py-2.5">
-                      <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" />
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Company
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Linkedin
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Stage
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Contacts
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
-                    <th className="py-2.5 pr-4">
-                      <div className="inline-flex items-center gap-1.5">
-                        Position
-                        <ChevronsUpDown className="h-3 w-3" />
-                      </div>
-                    </th>
+                  <tr className="select-none border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground">
+                    {SORTABLE_COLUMNS.map((col) => (
+                      <th
+                        key={col.key}
+                        className="cursor-pointer py-2.5 pr-4 hover:text-foreground"
+                        onClick={() => toggleSort(col.key)}
+                        aria-sort={
+                          sortKey === col.key
+                            ? sortDirection === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                        }
+                      >
+                        <div className="inline-flex items-center gap-1.5">
+                          {col.label}
+                          <ChevronsUpDown
+                            className={cn("h-3 w-3", sortKey === col.key && "text-foreground")}
+                          />
+                        </div>
+                      </th>
+                    ))}
+                    <th className="py-2.5 pr-4">Links</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((c, index) => (
-                  <tr 
-                    key={c.id} 
-                    className="border-b border-border/50 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
+                {pagination.pageRows.map((c, index) => (
+                  <tr
+                    key={c.id}
+                    className="group border-b border-border/50 transition-colors hover:bg-muted/30 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
-                      <td className="w-8 py-2.5">
-                        <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" />
-                      </td>
-                      <td className="py-2.5 pr-4 font-medium text-foreground">{c.name}</td>
-                      <td className="py-2.5 pr-4">
-                        <a href="#" className="font-medium text-[#111827] underline underline-offset-2 dark:text-slate-100">
-                          {c.name}
-                        </a>
-                      </td>
+                      <td className="py-2.5 pr-4 text-[13px] font-semibold text-foreground">{c.name}</td>
                       <td className="py-2.5 pr-4">
                         <Badge className={`font-medium ${STAGE_VARIANTS[c.stage]}`}>{c.stage}</Badge>
                       </td>
@@ -368,7 +421,40 @@ export default function CompaniesPage() {
                           </div>
                         </div>
                       </td>
+                      <td className="py-2.5 pr-4 font-medium text-foreground">
+                        {c.value > 0 ? formatCompactCurrency(c.value) : "—"}
+                      </td>
                       <td className="py-2.5 pr-4 text-muted-foreground">{c.contactRole}</td>
+                      <td className="py-2.5 pr-4">
+                        {/* Real links only. This column used to render href="#" with the company
+                            name in it, which looked like a LinkedIn profile and went nowhere. */}
+                        <div className="flex items-center gap-2">
+                          {c.linkedinUrl ? (
+                            <a
+                              href={c.linkedinUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label={`${c.name} on LinkedIn`}
+                              className="text-muted-foreground hover:text-[#0B7FB3]"
+                            >
+                              <Linkedin className="h-3.5 w-3.5" />
+                            </a>
+                          ) : null}
+                          {c.website ? (
+                            <a
+                              href={c.website}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] text-[#0B7FB3] hover:underline"
+                            >
+                              Website
+                            </a>
+                          ) : null}
+                          {!c.linkedinUrl && !c.website ? (
+                            <span className="text-[11px] text-muted-foreground">—</span>
+                          ) : null}
+                        </div>
+                      </td>
                   </tr>
                 ))}
               </tbody>
@@ -377,45 +463,16 @@ export default function CompaniesPage() {
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-between px-1 pb-1">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Showing</span>
-          <button className="inline-flex h-8 items-center gap-1 rounded-md border border-border/70 bg-white px-2 text-xs font-medium text-foreground dark:bg-card">
-            10 per page
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 bg-white text-muted-foreground dark:bg-card">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          {[1, 2, 3].map((n) => (
-            <button
-              key={n}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm ${
-                n === 2
-                  ? "border-[#0A1128] bg-[#0A1128] font-semibold text-white"
-                  : "border-border/70 bg-white text-foreground dark:bg-card"
-              }`}
-            >
-              {n}
-            </button>
-          ))}
-          <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 bg-white text-muted-foreground dark:bg-card">
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+      {viewMode === "list" ? (
+        <TablePagination
+          page={pagination.page}
+          pageCount={pagination.pageCount}
+          pageSize={pagination.pageSize}
+          total={pagination.total}
+          onPageChange={pagination.setPage}
+          onPageSizeChange={pagination.setPageSize}
+        />
+      ) : null}
     </div>
   );
-}
-
-function summaryHash(rows: { id: string }[], seed: number): number {
-  return rows.reduce((acc, row) => {
-    let hash = acc;
-    for (let i = 0; i < row.id.length; i += 1) {
-      hash = (hash * 31 + row.id.charCodeAt(i) + seed) % 9973;
-    }
-    return hash;
-  }, seed * 17);
 }

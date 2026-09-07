@@ -18,8 +18,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiMutation } from "@/lib/use-api-mutation";
 import {
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronsUpDown,
   Clock3,
   Filter,
@@ -43,6 +41,8 @@ import { apiFetch, apiListAll } from "@/lib/api";
 import Link from "next/link";
 import { ContactDrawer } from "@/components/contacts/contact-drawer";
 import { ContactsGallery } from "@/components/contacts/contacts-gallery";
+import { TablePagination } from "@/components/shared/table-pagination";
+import { usePagination } from "@/lib/use-table-controls";
 import { cn } from "@dracara/ui";
 import { leadStage } from "@/lib/leads";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -111,11 +111,14 @@ export default function ContactsPage() {
   const searchParams = useSearchParams();
   const viewMode = searchParams.get("view") || "list";
 
-  const [searchQuery, setSearchQuery] = useState("");
+  // Seeded from ?q= so the global search in the top bar lands here with its term applied.
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") ?? "");
   const [selectedStage, setSelectedStage] = useState<string>("all");
   const [sortField, setSortField] = useState<"name" | "company" | "role" | "stage" | "source">("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  const [showFilters, setShowFilters] = useState(false);
+  // Open the filter panel when arriving with a search term, so the active filter that is
+  // shrinking the table is visible rather than hidden behind a collapsed toggle.
+  const [showFilters, setShowFilters] = useState(Boolean(searchParams.get("q")));
   const [showSort, setShowSort] = useState(false);
   const [isStatsCollapsed, setIsStatsCollapsed] = useState(false);
 
@@ -184,6 +187,8 @@ export default function ContactsPage() {
         return sortOrder === "asc" ? cmp : -cmp;
       });
   }, [rows, leads, selectedStage, searchQuery, sortField, sortOrder]);
+
+  const pagination = usePagination(filteredAndSortedRows);
 
   const { mutate: updateContact } = useApiMutation({
     errorTitle: "Could not update contact",    mutationFn: async ({ id, data }: { id: string; data: Partial<ContactRow> }) => {
@@ -600,7 +605,7 @@ export default function ContactsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredAndSortedRows.map((c, index) => {
+                {pagination.pageRows.map((c, index) => {
                   const stage = contactPipelineStage(c, leads);
                   return (
                   <tr 
@@ -699,36 +704,16 @@ export default function ContactsPage() {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between px-1 pb-1 pt-2">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Showing</span>
-          <button className="inline-flex h-8 items-center gap-1 rounded-md border border-border/70 bg-white px-2 text-xs font-medium text-foreground dark:bg-card">
-            10 per page
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 bg-white text-muted-foreground dark:bg-card">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          {[1, 2, 3].map((n) => (
-            <button
-              key={n}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm ${
-                n === 1
-                  ? "border-[#0A1128] bg-[#0A1128] font-semibold text-white"
-                  : "border-border/70 bg-white text-foreground dark:bg-card"
-              }`}
-            >
-              {n}
-            </button>
-          ))}
-          <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 bg-white text-muted-foreground dark:bg-card">
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+      {viewMode === "list" ? (
+        <TablePagination
+          page={pagination.page}
+          pageCount={pagination.pageCount}
+          pageSize={pagination.pageSize}
+          total={pagination.total}
+          onPageChange={pagination.setPage}
+          onPageSizeChange={pagination.setPageSize}
+        />
+      ) : null}
     </div>
   );
 }

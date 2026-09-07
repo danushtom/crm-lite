@@ -35,6 +35,14 @@ export interface PhoneNumber {
   assigned_voice_agent_id: string | null;
 }
 
+export interface VoiceAgentDocument {
+  id: string;
+  filename: string;
+  file_url: string;
+  content_type: string | null;
+  created_at: string | null;
+}
+
 export interface CallSummary {
   id: string;
   voice_agent_id: string;

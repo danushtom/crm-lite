@@ -2,12 +2,13 @@
 
 import { Button } from "@dracara/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot } from "lucide-react";
+import { Bot, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { useApiMutation } from "@/lib/use-api-mutation";
-import { EntityDrawer, SelectField, TextField, TextareaField } from "@/components/shared/entity-drawer";
+import { EntityDrawer, Field, SelectField, TextField, TextareaField } from "@/components/shared/entity-drawer";
+import { AgentDocuments } from "@/components/voice-agents/agent-documents";
 import type { PhoneNumber, VoiceAgent, VoiceAgentDirection } from "@dracara/types";
 
 const DIRECTION_OPTIONS: { value: VoiceAgentDirection; label: string }[] = [
@@ -16,11 +17,17 @@ const DIRECTION_OPTIONS: { value: VoiceAgentDirection; label: string }[] = [
   { value: "both", label: "Both" },
 ];
 
+const STATUS_OPTIONS = [
+  { value: "true", label: "Active" },
+  { value: "false", label: "Paused" },
+];
+
 type FormState = {
   name: string;
   system_prompt: string;
   direction: VoiceAgentDirection;
   phone_number_id: string;
+  is_active: string;
 };
 
 function emptyForm(agent?: VoiceAgent): FormState {
@@ -29,6 +36,7 @@ function emptyForm(agent?: VoiceAgent): FormState {
     system_prompt: agent?.system_prompt ?? "",
     direction: agent?.direction ?? "outbound",
     phone_number_id: agent?.phone_number_id ?? "",
+    is_active: String(agent?.is_active ?? true),
   };
 }
 
@@ -59,11 +67,15 @@ export function VoiceAgentDrawer({ agent, trigger }: { agent?: VoiceAgent; trigg
       isEdit
         ? apiFetch<VoiceAgent>(`/voice-agents/${agent!.id}`, {
             method: "PATCH",
+            // The API guards this with If-Match; without the header the edit is rejected as a
+            // precondition failure rather than silently overwriting a concurrent change.
+            headers: { "If-Match": `"${agent!.version}"` },
             body: JSON.stringify({
               name: form.name.trim(),
               system_prompt: form.system_prompt.trim(),
               direction: form.direction,
               phone_number_id: form.phone_number_id || null,
+              is_active: form.is_active === "true",
             }),
           })
         : apiFetch<VoiceAgent>("/voice-agents", {
@@ -82,6 +94,23 @@ export function VoiceAgentDrawer({ agent, trigger }: { agent?: VoiceAgent; trigg
     },
   });
 
+  const remove = useApiMutation({
+    errorTitle: "Could not delete this voice agent",
+    mutationFn: () =>
+      apiFetch(`/voice-agents/${agent!.id}`, {
+        method: "DELETE",
+        headers: { "If-Match": `"${agent!.version}"` },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["voice-agents"] });
+      qc.invalidateQueries({ queryKey: ["voice-agents", "phone-numbers"] });
+      toast.success("Voice agent deleted", {
+        description: "Its number is now free to assign to another agent.",
+      });
+      setOpen(false);
+    },
+  });
+
   return (
     <EntityDrawer
       open={open}
@@ -92,8 +121,22 @@ export function VoiceAgentDrawer({ agent, trigger }: { agent?: VoiceAgent; trigg
       description={isEdit ? agent!.name : "Configure what this AI agent says and does on a call."}
       submitLabel={isEdit ? "Save changes" : "Create agent"}
       canSubmit={form.name.trim().length > 0 && form.system_prompt.trim().length > 0}
-      isPending={save.isPending}
+      isPending={save.isPending || remove.isPending}
       onSubmit={() => save.mutate()}
+      destructiveAction={
+        isEdit ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete agent
+          </Button>
+        ) : undefined
+      }
     >
       <TextField
         id="voice-agent-name"
@@ -129,8 +172,32 @@ export function VoiceAgentDrawer({ agent, trigger }: { agent?: VoiceAgent; trigg
         onChange={(v) => setForm((p) => ({ ...p, phone_number_id: v }))}
         placeholder="No number assigned yet"
         options={(phoneNumbers ?? []).map((n) => ({ value: n.id, label: n.e164_number }))}
-        hint="Register a number under Phone numbers below first."
+        hint="Register a number under Phone numbers first."
       />
+
+      {isEdit ? (
+        <>
+          <SelectField
+            id="voice-agent-status"
+            label="Status"
+            value={form.is_active}
+            onChange={(v) => setForm((p) => ({ ...p, is_active: v }))}
+            options={STATUS_OPTIONS}
+            hint="A paused agent keeps its configuration and history but takes no calls."
+          />
+
+          <Field
+            label="Knowledge base"
+            hint="Documents the agent can quote from mid-call, alongside live CRM data."
+          >
+            <AgentDocuments voiceAgentId={agent!.id} />
+          </Field>
+        </>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Knowledge-base documents can be uploaded once the agent is created.
+        </p>
+      )}
     </EntityDrawer>
   );
 }

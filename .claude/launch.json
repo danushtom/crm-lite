@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "C:\\Users\\User\\Desktop\\crm-lite\\run_api_dev.bat"],
+      "port": 8000
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "C:\\Users\\User\\Desktop\\crm-lite\\run_web_dev.bat"],
+      "port": 3000
+    }
+  ]
+}

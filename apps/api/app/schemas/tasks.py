@@ -43,6 +43,14 @@ class TaskUpdate(PatchModel):
     outcome_note: str | None = Field(default=None, max_length=2_000)
     notes: str | None = Field(default=None, max_length=5_000)
     title: str | None = Field(default=None, min_length=1, max_length=300)
+    owner_id: str | None = Field(
+        default=None,
+        description=(
+            "Reassign the follow-up to another teammate. Leads are reassignable, so without "
+            "this, deactivating someone moved their pipeline but stranded every task they "
+            "owned -- invisible in every queue, since the follow-up queues are owner-scoped."
+        ),
+    )
 
     @model_validator(mode="after")
     def _snooze_requires_date(self) -> "TaskUpdate":

@@ -74,6 +74,30 @@ def test_any_authenticated_user_can_list_roles(authed_client, fake_db):
     assert body[0]["user_count"] == 2
 
 
+def test_a_single_role_can_be_read_back(authed_client, fake_db):
+    """Needed to recover from a 412 without refetching the whole list."""
+    fake_db.responses["GET roles"] = FakeResult(SALES_LEAD_ROLE_ROW)
+    fake_db.responses["GET users"] = FakeResult([{"role_id": SALES_LEAD_ROLE_ROW["id"]}])
+
+    response = authed_client.get(f"{V1}/roles/{SALES_LEAD_ROLE_ROW['id']}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "Sales Lead"
+    assert body["permissions"] == ["leads.read"]
+    assert body["user_count"] == 1
+
+
+def test_the_catalog_route_is_not_shadowed_by_the_single_role_route(authed_client, fake_db):
+    """GET /roles/catalog must keep resolving to the catalog, not be captured as an id."""
+    fake_db.responses["GET permissions"] = FakeResult(PERMISSIONS_CATALOG)
+
+    response = authed_client.get(f"{V1}/roles/catalog")
+
+    assert response.status_code == 200
+    assert {p["action"] for p in response.json()} == {"read", "write"}
+
+
 # --- Create -----------------------------------------------------------------------
 
 
