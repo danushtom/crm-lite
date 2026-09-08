@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from app.api.deps import CurrentUserDep, DbDep, require_permission
 from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.pagination import Page, PageParamsDep
+from app.core.search import contains_pattern
 from app.domain.enums import LeadSource, LeadStage, ProjectType
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
 from app.schemas.leads import (
@@ -36,12 +37,6 @@ from app.services import leads as lead_service
 router = APIRouter(prefix="/leads", tags=["Leads"])
 
 _EMBED = f"*,companies(*),opportunities({lead_service.OPPORTUNITY_COLUMNS})"
-
-
-def _search_pattern(term: str) -> str:
-    """PostgREST treats * as the wildcard; strip characters that would break the filter."""
-    cleaned = "".join(c for c in term.strip() if c not in "*%(),")[:200]
-    return f"*{cleaned}*" if cleaned else ""
 
 
 @router.get(
@@ -87,7 +82,7 @@ async def list_leads(
         params["opportunities.stage"] = f"eq.{stage.value}"
 
     if search:
-        pattern = _search_pattern(search)
+        pattern = contains_pattern(search)
         if pattern:
             params["select"] = params["select"].replace("companies(", "companies!inner(")
             params["companies.name"] = f"ilike.{pattern}"

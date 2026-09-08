@@ -9,14 +9,13 @@ constraint, so the loser of that race gets a unique violation rather than a dupl
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Any
 
-import httpx
 
 from app.core.config import settings
-from app.core.errors import ConflictError, NotConfiguredError, PayloadTooLargeError, UpstreamError
-from app.db.supabase import SupabaseClient, get_http_client
+from app.core.errors import ConflictError
+from app.db.supabase import SupabaseClient
+from app.services import storage
 
 logger = logging.getLogger(__name__)
 
@@ -77,33 +76,14 @@ async def upload_file(
     content_type: str | None,
     data: bytes,
 ) -> str:
-    """Upload a proposal document to Supabase Storage and return its public URL."""
-    if not settings.supabase_service_role_key:
-        raise NotConfiguredError("SUPABASE_SERVICE_ROLE_KEY is required for proposal uploads")
-    if len(data) > settings.max_upload_bytes:
-        limit_mb = settings.max_upload_bytes // (1024 * 1024)
-        raise PayloadTooLargeError(f"File exceeds the {limit_mb}MB upload limit")
+    """Store a proposal document and return its object path.
 
-    safe_name = (filename or "proposal").replace("/", "_").replace("\\", "_")[:200]
-    object_path = f"{opportunity_id}/v{version}_{uuid.uuid4().hex[:8]}_{safe_name}"
-    bucket = settings.proposals_bucket
-
-    client = get_http_client()
-    try:
-        response = await client.post(
-            f"{settings.storage_base_url}/object/{bucket}/{object_path}",
-            headers={
-                "Authorization": f"Bearer {settings.supabase_service_role_key}",
-                "Content-Type": content_type or "application/octet-stream",
-            },
-            content=data,
-            timeout=httpx.Timeout(120.0, connect=10.0),
-        )
-    except httpx.HTTPError as exc:
-        raise UpstreamError("Storage upload failed") from exc
-
-    if response.status_code >= 400:
-        logger.error("storage_upload_failed status=%s body=%s", response.status_code, response.text)
-        raise UpstreamError("Storage rejected the upload")
-
-    return f"{settings.storage_base_url}/object/public/{bucket}/{object_path}"
+    A path, not a URL: the bucket is private, so a readable link is signed per response and
+    expires. See app.services.storage for why.
+    """
+    path = storage.object_path(
+        f"{opportunity_id}/v{version}", filename, fallback="proposal"
+    )
+    return await storage.upload(
+        bucket=settings.proposals_bucket, path=path, data=data, content_type=content_type
+    )

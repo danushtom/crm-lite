@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import CurrentUserDep, DbDep
+from app.core.config import settings
 from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.domain.enums import LeadStage, OpportunityStatus
@@ -22,6 +23,7 @@ from app.schemas.opportunities import (
 )
 from app.services import leads as lead_service
 from app.services import proposals as proposal_service
+from app.services import storage
 
 router = APIRouter(prefix="/opportunities", tags=["Opportunities"])
 
@@ -169,7 +171,14 @@ async def list_proposals(
         },
         count=True,
     )
-    return Page.build([Proposal.model_validate(p) for p in result.rows], page, result.count)
+    # file_url holds an object path in a private bucket; sign it per response so the link the
+    # client gets is readable but expires.
+    proposals = [Proposal.model_validate(p) for p in result.rows]
+    for proposal in proposals:
+        proposal.file_url = await storage.signed_url(
+            bucket=settings.proposals_bucket, path=proposal.file_url or "", filename=proposal.title
+        )
+    return Page.build(proposals, page, result.count)
 
 
 @router.post(
@@ -212,7 +221,7 @@ async def upload_proposal(
 ) -> Proposal:
     version = await proposal_service.next_version(db, opportunity_id)
     data = await file.read()
-    public_url = await proposal_service.upload_file(
+    stored_path = await proposal_service.upload_file(
         opportunity_id=opportunity_id,
         version=version,
         filename=file.filename or "proposal",
@@ -222,10 +231,14 @@ async def upload_proposal(
     created = await proposal_service.create_version(
         db,
         opportunity_id,
-        {"title": title, "file_url": public_url, "status": "draft"},
+        {"title": title, "file_url": stored_path, "status": "draft"},
         created_by=user.sub,
     )
-    return Proposal.model_validate(created)
+    proposal = Proposal.model_validate(created)
+    proposal.file_url = await storage.signed_url(
+        bucket=settings.proposals_bucket, path=stored_path, filename=title
+    )
+    return proposal
 
 
 @router.delete(

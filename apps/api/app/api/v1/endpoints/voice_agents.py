@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, statu
 
 from app.api.deps import AdminDbDep, AdminDep, CurrentUserDep, DbDep, ProfileDep, require_permission
 from app.domain.enums import CallDirection, CallStatus
+from app.core.config import settings
 from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.errors import ConflictError, ForbiddenError, NotConfiguredError
 from app.core.pagination import Page, PageParamsDep
@@ -41,6 +42,7 @@ from app.schemas.voice_agents import (
     VoiceAgentUpdate,
 )
 from app.services import voice_agents as voice_agent_service
+from app.services import storage
 from app.services import voice_platform
 from app.services.calls import finalize_call
 
@@ -358,7 +360,17 @@ async def list_documents(
         "voice_agent_documents",
         params={"select": "*", "voice_agent_id": f"eq.{voice_agent_id}", "order": "created_at.desc,id.desc"},
     )
-    return [VoiceAgentDocument.model_validate(r) for r in result.rows]
+    documents = [VoiceAgentDocument.model_validate(r) for r in result.rows]
+    for document in documents:
+        document.file_url = (
+            await storage.signed_url(
+                bucket=settings.voice_kb_bucket,
+                path=document.file_url,
+                filename=document.filename,
+            )
+            or ""
+        )
+    return documents
 
 
 @router.post(
@@ -392,7 +404,14 @@ async def upload_document(
             "uploaded_by": user.sub,
         },
     )
-    return VoiceAgentDocument.model_validate(result.one("Document"))
+    document = VoiceAgentDocument.model_validate(result.one("Document"))
+    document.file_url = (
+        await storage.signed_url(
+            bucket=settings.voice_kb_bucket, path=file_url, filename=document.filename
+        )
+        or ""
+    )
+    return document
 
 
 @router.delete("/{voice_agent_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT, responses=ERROR_RESPONSES)

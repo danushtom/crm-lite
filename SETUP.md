@@ -69,6 +69,33 @@ supabase db push             # apply it
 
 Migrations are additive and forward-only: a mistake already applied is corrected by a new migration, never by editing one that already ran. Do not attempt `supabase db reset` against a shared project — it is destructive and will drop existing data; it is only appropriate against a project only you use.
 
+### 3.4 Storage buckets
+
+File uploads need two Supabase Storage buckets. They must be **private**: proposals carry
+pricing and contract terms, and a voice agent's knowledge base carries pricing sheets and
+internal call scripts. The API stores the object path on the row and mints a short-lived signed
+link per response, so a public bucket is not merely unnecessary but actively wrong — a public
+link never expires, and it travels out to every member of the organization, into browser
+history, and into `Referer` on the next click.
+
+Create them from the Supabase dashboard (Storage, then New bucket) with **Public bucket off**,
+or with the CLI-equivalent REST call:
+
+```bash
+curl -X POST "$SUPABASE_URL/storage/v1/bucket"   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"   -H "apikey: $SUPABASE_SERVICE_ROLE_KEY"   -H "Content-Type: application/json"   -d '{"name":"proposals","id":"proposals","public":false,"file_size_limit":52428800}'
+```
+
+Repeat for `voice-agent-docs`. Two settings are worth applying to both:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Public | off | A signed link expires; a public URL does not |
+| File size limit | 52428800 (50 MiB) | Enforced server-side, matching `MAX_UPLOAD_BYTES` |
+| Allowed MIME types | documents and images only | The uploading client's `Content-Type` is not trustworthy |
+
+Uploads fail with an upstream storage error until these exist. Bucket names come from
+`PROPOSALS_BUCKET` and `VOICE_KB_BUCKET` if you want different ones.
+
 ## 4. Environment variables
 
 ### 4.1 Backend (`apps/api/.env`)

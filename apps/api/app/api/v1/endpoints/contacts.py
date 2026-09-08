@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query, Response, status
 from app.api.deps import CurrentUserDep, DbDep
 from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.pagination import Page, PageParamsDep
+from app.core.search import contains_pattern
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
 from app.schemas.contacts import Contact, ContactCreate, ContactUpdate, ContactWithCompany
 
@@ -39,10 +40,11 @@ async def list_contacts(
     }
     if company_id:
         params["company_id"] = f"eq.{company_id}"
-    if search and search.strip():
-        cleaned = search.strip().replace("*", "").replace("%", "").replace(",", "")[:200]
-        if cleaned:
-            params["or"] = f"(full_name.ilike.*{cleaned}*,email.ilike.*{cleaned}*)"
+    # An or= group is the one place where the commas and parentheses really are structural,
+    # which is why every caller now goes through the same sanitiser.
+    pattern = contains_pattern(search)
+    if pattern:
+        params["or"] = f"(full_name.ilike.{pattern},email.ilike.{pattern})"
 
     result = await db.select("contacts", params=params, count=True)
     return Page.build(

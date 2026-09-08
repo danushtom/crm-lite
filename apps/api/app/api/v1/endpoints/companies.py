@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query, Response, status
 from app.api.deps import CurrentUserDep, DbDep
 from app.core.concurrency import IfMatchDep, set_etag, soft_delete_guarded, update_guarded
 from app.core.pagination import Page, PageParamsDep
+from app.core.search import contains_pattern
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
 from app.schemas.companies import Company, CompanyCreate, CompanyUpdate
 
@@ -35,10 +36,9 @@ async def list_companies(
         "limit": str(page.limit),
         "offset": str(page.offset),
     }
-    if search and search.strip():
-        cleaned = search.strip().replace("*", "").replace("%", "")[:200]
-        if cleaned:
-            params["name"] = f"ilike.*{cleaned}*"
+    pattern = contains_pattern(search)
+    if pattern:
+        params["name"] = f"ilike.{pattern}"
 
     result = await db.select("companies", params=params, count=True)
     return Page.build([Company.model_validate(r) for r in result.rows], page, result.count)
