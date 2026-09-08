@@ -1,7 +1,7 @@
 "use client";
 
 import type { MeetingRow } from "@dracara/types";
-import { Badge, Button, Card, CardContent, cn } from "@dracara/ui";
+import { Badge, Button, Card, CardContent, Skeleton, cn } from "@dracara/ui";
 import { useQuery } from "@tanstack/react-query";
 import {
   addMonths,
@@ -17,10 +17,11 @@ import {
   startOfWeek,
   subMonths,
 } from "date-fns";
-import { CalendarClock, ChevronLeft, ChevronRight, Video } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, Pencil, Video } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { apiListAll } from "@/lib/api";
+import { MeetingDrawer } from "@/components/meetings/meeting-drawer";
 
 const STATUS_TONE: Record<string, string> = {
   scheduled: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
@@ -77,8 +78,7 @@ export default function CalendarPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Calendar</h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Every meeting across your deals. Connect Google Calendar in{" "}
             <Link href="/settings" className="underline underline-offset-4">
               settings
@@ -120,8 +120,15 @@ export default function CalendarPage() {
                 </div>
               ))}
             </div>
+            {/* Without this the month rendered fully empty while meetings were still in
+                flight, which reads as "nothing scheduled" rather than "not loaded yet". */}
             <div className="grid grid-cols-7 gap-1">
-              {days.map((day) => {
+              {isLoading
+                ? days.map((day) => (
+                    <Skeleton key={day.toISOString()} className="min-h-[4.5rem] rounded-lg" />
+                  ))
+                : null}
+              {isLoading ? null : days.map((day) => {
                 const dayMeetings = byDay.get(format(day, "yyyy-MM-dd")) ?? [];
                 const outside = !isSameMonth(day, cursor);
                 const isSelected = isSameDay(day, selected);
@@ -200,9 +207,27 @@ export default function CalendarPage() {
                     </Button>
                   ) : null}
                   {m.lead_id ? (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
-                      <Link href={`/leads/${m.lead_id}/reminders`}>Open deal</Link>
-                    </Button>
+                    <>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+                        <Link href={`/leads/${m.lead_id}/reminders`}>Open deal</Link>
+                      </Button>
+                      {/* Reschedule or record the outcome without leaving the calendar --
+                          previously the only way in was the lead's reminders sub-route. */}
+                      <MeetingDrawer
+                        leadId={m.lead_id}
+                        meeting={m}
+                        trigger={
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            aria-label={`Edit ${m.title}`}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        }
+                      />
+                    </>
                   ) : (
                     <span className="text-[11px] text-muted-foreground">
                       Synced from Calendar, not linked to a deal

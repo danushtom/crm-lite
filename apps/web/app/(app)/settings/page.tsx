@@ -1,6 +1,18 @@
 "use client";
 
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "@dracara/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Input,
+  Skeleton,
+  fieldLabel,
+  primaryButton,
+} from "@dracara/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, CircleAlert, Link2, Loader2, Unlink } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -16,6 +28,14 @@ type Me = {
   role: string;
   timezone: string;
   calendar_connected: boolean;
+  permissions?: string[];
+  is_admin?: boolean;
+};
+
+type Organization = {
+  id: string;
+  name: string;
+  slug: string | null;
 };
 
 const TIMEZONES = [
@@ -91,10 +111,9 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-muted-foreground">Your profile and connected services.</p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Your profile, your workspace, and connected services.
+      </p>
 
       <Card>
         <CardHeader>
@@ -106,12 +125,15 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
           ) : (
             <>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label htmlFor="me-name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  <label htmlFor="me-name" className={fieldLabel}>
                     Full name
                   </label>
                   <Input
@@ -122,7 +144,7 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="me-tz" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  <label htmlFor="me-tz" className={fieldLabel}>
                     Timezone
                   </label>
                   <select
@@ -145,13 +167,13 @@ export default function SettingsPage() {
                   Signed in as {me?.email} · <span className="capitalize">{me?.role}</span>
                 </p>
                 <Button
-                  size="sm"
+                  className={primaryButton}
                   disabled={!dirty || saveProfile.isPending}
                   onClick={() => saveProfile.mutate()}
                 >
                   {saveProfile.isPending ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
                       Saving…
                     </>
                   ) : (
@@ -163,6 +185,8 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      <WorkspaceCard />
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -198,12 +222,11 @@ export default function SettingsPage() {
             </Button>
           ) : (
             <Button
-              size="sm"
-              className="gap-2"
+              className={primaryButton}
               disabled={connect.isPending}
               onClick={() => connect.mutate()}
             >
-              <Link2 className="h-4 w-4" />
+              <Link2 className="h-3.5 w-3.5" />
               {connect.isPending ? "Opening Google…" : "Connect Google Calendar"}
             </Button>
           )}
@@ -221,5 +244,85 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * The workspace name.
+ *
+ * It was set once at signup and there was no way to see or change it afterwards — the
+ * organization row had no read or update endpoint at all. It matters beyond cosmetics: every
+ * AI voice agent's recording disclosure names the organization, so a placeholder here is what
+ * a prospect hears on the phone.
+ */
+function WorkspaceCard() {
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+
+  const { data: org, isLoading, error } = useQuery({
+    queryKey: ["organization"],
+    queryFn: () => apiFetch<Organization>("/organizations/me"),
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (org) setName(org.name);
+  }, [org]);
+
+  const save = useApiMutation({
+    errorTitle: "Could not rename this workspace",
+    mutationFn: () =>
+      apiFetch<Organization>("/organizations/me", {
+        method: "PATCH",
+        body: JSON.stringify({ name: name.trim() }),
+      }),
+    onSuccess: (saved) => {
+      qc.invalidateQueries({ queryKey: ["organization"] });
+      toast.success("Workspace renamed", { description: saved.name });
+    },
+  });
+
+  const dirty = Boolean(org) && name.trim() !== org?.name && name.trim().length > 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Workspace</CardTitle>
+        <CardDescription>
+          The name your team and your AI voice agents identify themselves by. Only a full-access
+          role may change it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <Skeleton className="h-16 w-full max-w-sm" />
+        ) : error ? (
+          <p className="text-sm text-destructive">{(error as Error).message}</p>
+        ) : (
+          <>
+            <div className="max-w-sm space-y-2">
+              <label htmlFor="org-name" className={fieldLabel}>
+                Workspace name
+              </label>
+              <Input
+                id="org-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Acme Inc"
+              />
+            </div>
+            <div className="flex justify-end border-t border-border/50 pt-4">
+              <Button
+                className={primaryButton}
+                disabled={!dirty || save.isPending}
+                onClick={() => save.mutate()}
+              >
+                {save.isPending ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

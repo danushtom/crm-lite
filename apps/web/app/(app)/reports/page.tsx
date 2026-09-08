@@ -17,6 +17,7 @@ import {
 } from "recharts";
 import { apiFetch, apiListAll } from "@/lib/api";
 import { LEAD_STAGE_OPTIONS, humanizeEnum } from "@/lib/forms";
+import { KpiCard } from "@/components/shared/kpi-card";
 
 type Dashboard = {
   pipeline_total: number;
@@ -89,12 +90,9 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Reports</h1>
-        <p className="mt-1 text-muted-foreground">
-          Pipeline shape, conversion and where the work comes from.
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Pipeline shape, conversion and where the work comes from.
+      </p>
 
       {dash?.mixed_currency ? (
         <div className="flex gap-2 rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
@@ -107,7 +105,7 @@ export default function ReportsPage() {
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric
+        <KpiCard
           label="Pipeline"
           value={
             currencies.length === 0
@@ -116,17 +114,17 @@ export default function ReportsPage() {
           }
           hint={`${opportunities.length} open pursuits`}
         />
-        <Metric
+        <KpiCard
           label="Weighted forecast"
           value={dash ? Math.round(dash.weighted_forecast).toLocaleString() : "—"}
           hint="Pipeline × probability"
         />
-        <Metric
+        <KpiCard
           label="Win rate (30d)"
           value={winRate === null ? "—" : `${winRate}%`}
           hint={decided === 0 ? "Nothing closed yet" : `${wins} won · ${losses} lost`}
         />
-        <Metric
+        <KpiCard
           label="Awaiting response"
           value={String(dash?.proposals_pending_response ?? 0)}
           hint="Proposals sent, no answer"
@@ -225,17 +223,5 @@ export default function ReportsPage() {
         </Card>
       </div>
     </div>
-  );
-}
-
-function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className="mt-2 truncate text-xl font-semibold tabular-nums">{value}</p>
-        {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
-      </CardContent>
-    </Card>
   );
 }
