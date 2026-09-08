@@ -245,9 +245,11 @@ export default function ContactsPage() {
         campaignCount: entry.campaigns.size,
         pct: Math.round((entry.count / total) * 100),
       }))
-      // Ordered by the value they brought in, not headcount: the point of the card is which
-      // channel is worth spending more on.
-      .sort((a, b) => b.value - a.value || b.count - a.count)
+      // Ordered by headcount, which is the question this card answers: where most contacts
+      // came from. Sorting by value instead pushed a one-contact channel that happened to sit
+      // on a large deal to the front and dropped a channel with twice the contacts off the
+      // end of the four tiles entirely.
+      .sort((a, b) => b.count - a.count || b.value - a.value)
       .slice(0, 4);
 
     return {
@@ -436,7 +438,7 @@ export default function ContactsPage() {
             ? { text: `${summary.attributed} attributed`, tone: "positive" }
             : undefined
         }
-        emphasisLabel="Best channel"
+        emphasisLabel="Most contacts"
         tiles={summary.campaigns.map((campaign, index) => ({
           label: campaign.name,
           value: String(campaign.count),

@@ -123,6 +123,9 @@ async def list_keys(db: DbDep, _admin: AdminDep) -> list[LeadCaptureKey]:
 async def create_key(
     body: LeadCaptureKeyCreate, db: DbDep, user: CurrentUserDep, _admin: AdminDep
 ) -> LeadCaptureKey:
+    # No "select" here: db.insert takes no query params, so a select key would be sent as a
+    # column and PostgREST rejects it ("could not find the 'select' column"). The default
+    # representation is the whole row, which already covers _KEY_SELECT.
     result = await db.insert(
         "lead_capture_keys",
         {
@@ -130,7 +133,6 @@ async def create_key(
             "key": capture_service.generate_key(),
             "owner_id": body.owner_id,
             "created_by": user.sub,
-            "select": _KEY_SELECT,
         },
     )
     return LeadCaptureKey.model_validate(result.one("Capture key"))

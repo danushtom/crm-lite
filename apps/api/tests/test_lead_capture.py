@@ -248,6 +248,10 @@ def test_an_admin_creates_a_key_with_a_server_generated_secret(authed_client, fa
     assert payload["key"].startswith("lck_")
     assert len(payload["key"]) > 40
     assert payload["created_by"] == test_user.sub
+    # db.insert takes no query params, so a "select" here is sent as a column and PostgREST
+    # rejects the whole write ("could not find the 'select' column"). FakeDb accepts any
+    # payload, so only a real request caught this the first time.
+    assert "select" not in payload
 
 
 def test_a_client_cannot_choose_its_own_key_value(authed_client, fake_db, test_user):

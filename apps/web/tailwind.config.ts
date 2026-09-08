@@ -5,6 +5,11 @@ const config: Config = {
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    // lib/ was missing, so any class name defined there produced no CSS at all -- silently,
+    // since an ungenerated class is simply absent rather than an error. It caught the channel
+    // colours in lib/attribution.ts (which rendered as transparent bars) and the call-status
+    // badge tones in lib/calls.ts.
+    "./lib/**/*.{js,ts,jsx,tsx}",
     "../../packages/ui/src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
