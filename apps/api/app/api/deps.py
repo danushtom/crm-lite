@@ -83,6 +83,11 @@ async def get_current_profile(db: DbDep, user: CurrentUserDep) -> dict:
     profile = result.first()
     if profile is None:
         raise ForbiddenError("No profile exists for this account")
+    # Deactivated users are refused here as well as in RLS. The database is the authority --
+    # current_org_id() and is_admin() both require is_active -- but a token that outlives a
+    # revocation should get a clear 403 from the API rather than a silently empty collection.
+    if not profile.get("is_active", True):
+        raise ForbiddenError("This account's access has been revoked")
     return profile
 
 
