@@ -44,6 +44,15 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+# Windows consoles default to cp1252, which cannot encode the arrows and ellipses used in the
+# progress output below -- the script died with a UnicodeEncodeError partway through seeding,
+# after having already created auth users. Force UTF-8 on the streams we print to instead of
+# stripping the characters, so the same output works on every platform.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,6 +84,37 @@ def derive_lead_source(utm_source: str | None, utm_medium: str | None) -> str:
     if source or medium:
         return "website"
     return "other"
+
+
+#: Acquisition mix for the seeded contacts, keyed by name so the insert path and
+#: --backfill-attribution stay in step. Values are the UTM set exactly as a real click carries
+#: it -- note the deliberate facebook / fb / instagram spread, which is what Meta actually
+#: sends depending on placement, and which lib/attribution.ts collapses back into one channel.
+#: A None means the contact was entered by hand and has only the coarse `source` enum.
+_META_LP = "https://dracara.dev/mvp-sprint"
+_LI_LP = "https://dracara.dev/enterprise-build"
+_GADS_LP = "https://dracara.dev/erp-migration"
+
+CONTACT_ATTRIBUTION: dict[str, dict[str, Any] | None] = {
+    "Aditi Rao": {"utm_source": "linkedin", "utm_medium": "cpc", "utm_campaign": "q3-enterprise-build", "utm_content": "case-study-carousel", "landing_page_url": _LI_LP},
+    "Rohit Menon": None,
+    "Sandra Baxter": {"utm_source": "facebook", "utm_medium": "cpc", "utm_campaign": "q3-mvp-sprint", "utm_content": "founder-video-a", "landing_page_url": _META_LP},
+    "Vikram Shah": {"utm_source": "linkedin", "utm_medium": "cpc", "utm_campaign": "q3-enterprise-build", "utm_content": "testimonial-single", "landing_page_url": _LI_LP},
+    "Meera Iyer": {"utm_source": "google", "utm_medium": "cpc", "utm_campaign": "erp-migration-search", "utm_term": "erp migration consultant", "landing_page_url": _GADS_LP},
+    "Ananya Das": {"utm_source": "instagram", "utm_medium": "paid_social", "utm_campaign": "q3-mvp-sprint", "utm_content": "reel-b", "landing_page_url": _META_LP},
+    "Karthik Nambiar": {"utm_source": "fb", "utm_medium": "cpc", "utm_campaign": "retargeting-visitors", "utm_content": "static-pricing", "landing_page_url": _META_LP},
+    "Neha Kapoor": {"utm_source": "clutch", "utm_medium": "referral", "utm_campaign": "directory-listing", "landing_page_url": "https://dracara.dev/"},
+    "Arjun Pillai": None,
+    "Divya Krishnan": {"utm_source": "google", "utm_medium": "cpc", "utm_campaign": "erp-migration-search", "utm_term": "sap alternative", "landing_page_url": _GADS_LP},
+    "Imran Qureshi": {"utm_source": "linkedin", "utm_medium": "organic", "landing_page_url": "https://dracara.dev/blog/scaling-delivery"},
+    "Leena Thomas": {"utm_source": "facebook", "utm_medium": "cpc", "utm_campaign": "q3-mvp-sprint", "utm_content": "founder-video-a", "landing_page_url": _META_LP},
+}
+
+#: Coarse source for the hand-entered ones, which have no UTM to derive from.
+CONTACT_MANUAL_SOURCE: dict[str, str] = {
+    "Rohit Menon": "cold_call",
+    "Arjun Pillai": "referral",
+}
 
 
 def load_dotenv_file(path: Path) -> dict[str, str]:
@@ -256,6 +296,66 @@ def patch_row(client: httpx.Client, base: str, service_key: str, table: str, pk_
         raise RuntimeError(f"PATCH {table} failed {r.status_code}: {r.text[:800]}")
 
 
+def backfill_attribution(
+    client: httpx.Client, base: str, service_key: str, organization_id: str
+) -> None:
+    """Add attribution to contacts seeded before the UTM columns existed.
+
+    Matched by name within the organization, and scoped to that organization explicitly: this
+    runs on the service-role key, so row-level security is not filtering anything and a missing
+    organization_id filter would happily update a same-named contact in another tenant.
+
+    Only fills columns that are currently empty. Re-running is therefore safe, and a contact
+    whose attribution was captured for real is never overwritten by demo values.
+    """
+    updated = 0
+    skipped = 0
+
+    for full_name, attr in CONTACT_ATTRIBUTION.items():
+        found = client.get(
+            f"{base}/rest/v1/contacts",
+            params={
+                "select": "id,full_name,utm_source,source",
+                "organization_id": f"eq.{organization_id}",
+                "full_name": f"eq.{full_name}",
+            },
+            headers=rest_headers(service_key),
+        )
+        found.raise_for_status()
+        rows = found.json()
+        if not rows:
+            print(f"  - {full_name}: not found, skipping")
+            continue
+
+        for row in rows:
+            if row.get("utm_source"):
+                skipped += 1
+                continue
+
+            manual_source = CONTACT_MANUAL_SOURCE.get(full_name)
+            body: dict[str, Any] = {
+                "source": manual_source
+                or (
+                    derive_lead_source(attr.get("utm_source"), attr.get("utm_medium"))
+                    if attr
+                    else "other"
+                )
+            }
+            if attr:
+                body.update({k: v for k, v in attr.items() if v is not None})
+                body["captured_at"] = (
+                    datetime.now(timezone.utc) - timedelta(days=3 * updated + 1)
+                ).isoformat()
+
+            patch_row(client, base, service_key, "contacts", "id", row["id"], body)
+            updated += 1
+            channel = attr.get("utm_source") if attr else body["source"]
+            print(f"  + {full_name}: {channel}")
+
+    print("")
+    print(f"Backfilled {updated} contact(s); {skipped} already had attribution.")
+
+
 def get_opportunity_for_lead(client: httpx.Client, base: str, service_key: str, lead_id: str) -> dict[str, Any]:
     r = client.get(
         f"{base}/rest/v1/opportunities",
@@ -276,6 +376,15 @@ def main() -> None:
         "--force",
         action="store_true",
         help="Insert demo rows even if a previous seed is detected (tags contain 'seed')",
+    )
+    parser.add_argument(
+        "--backfill-attribution",
+        action="store_true",
+        help=(
+            "Update existing seeded contacts with UTM attribution instead of inserting. "
+            "For a database seeded before attribution existed: --force would add a second "
+            "copy of every company, contact and lead rather than enriching the ones there."
+        ),
     )
     args = parser.parse_args()
 
@@ -313,6 +422,10 @@ def main() -> None:
 
         if args.dry_run:
             print("Dry run — skipping inserts.")
+            return
+
+        if args.backfill_attribution:
+            backfill_attribution(client, base, service_key, dracara_org_id)
             return
 
         # Avoid duplicate seed rows on re-run (FK explosions)
@@ -358,47 +471,26 @@ def main() -> None:
             company_ids.append(inserted["id"])
         print(f"Inserted {len(company_ids)} companies.")
 
-        # Realistic acquisition mix, so the Contacts strip has something to group by. `attr`
-        # is the UTM set exactly as a real click would carry it -- note the deliberate spread
-        # of facebook / fb / instagram for Meta, which is what the platform actually sends
-        # depending on placement, and what lib/attribution.ts collapses back into one channel.
-        # Contacts with attr=None were entered by hand and fall back to their `source` enum.
-        META = "https://dracara.dev/mvp-sprint"
-        LI = "https://dracara.dev/enterprise-build"
-        GADS = "https://dracara.dev/erp-migration"
-
         contacts_spec: list[dict[str, Any]] = [
-            {"ci": 0, "full_name": "Aditi Rao", "role": "VP Engineering", "email": "aditi@nova.example.com", "phone": "+91 90000 10001",
-             "attr": {"utm_source": "linkedin", "utm_medium": "cpc", "utm_campaign": "q3-enterprise-build", "utm_content": "case-study-carousel", "landing_page_url": LI}},
-            {"ci": 0, "full_name": "Rohit Menon", "role": "Procurement", "email": "rohit@nova.example.com", "phone": "+91 90000 10002",
-             "attr": None, "source": "cold_call"},
-            {"ci": 1, "full_name": "Sandra Baxter", "role": "Analytics Lead", "email": "sandra@riverbank.example.com", "phone": "+91 90000 10003",
-             "attr": {"utm_source": "facebook", "utm_medium": "cpc", "utm_campaign": "q3-mvp-sprint", "utm_content": "founder-video-a", "landing_page_url": META}},
-            {"ci": 2, "full_name": "Vikram Shah", "role": "CTO", "email": "vikram@meridian.example.com", "phone": "+91 90000 10004",
-             "attr": {"utm_source": "linkedin", "utm_medium": "cpc", "utm_campaign": "q3-enterprise-build", "utm_content": "testimonial-single", "landing_page_url": LI}},
-            {"ci": 3, "full_name": "Meera Iyer", "role": "Plant Head", "email": "meera@copper.example.com", "phone": "+91 90000 10005",
-             "attr": {"utm_source": "google", "utm_medium": "cpc", "utm_campaign": "erp-migration-search", "utm_term": "erp migration consultant", "landing_page_url": GADS}},
-            {"ci": 4, "full_name": "Ananya Das", "role": "COO", "email": "ananya@brightcart.example.com", "phone": "+91 90000 10006",
-             "attr": {"utm_source": "instagram", "utm_medium": "paid_social", "utm_campaign": "q3-mvp-sprint", "utm_content": "reel-b", "landing_page_url": META}},
-            {"ci": 5, "full_name": "Karthik Nambiar", "role": "Creative Director", "email": "karthik@skyline.example.com", "phone": "+91 90000 10007",
-             "attr": {"utm_source": "fb", "utm_medium": "cpc", "utm_campaign": "retargeting-visitors", "utm_content": "static-pricing", "landing_page_url": META}},
-            {"ci": 6, "full_name": "Neha Kapoor", "role": "Program Director", "email": "neha@atlas.example.com", "phone": "+91 90000 10008",
-             "attr": {"utm_source": "clutch", "utm_medium": "referral", "utm_campaign": "directory-listing", "landing_page_url": "https://dracara.dev/"}},
-            {"ci": 7, "full_name": "Arjun Pillai", "role": "Principal", "email": "arjun@pinewood.example.com", "phone": "+91 90000 10009",
-             "attr": None, "source": "referral"},
-            {"ci": 8, "full_name": "Divya Krishnan", "role": "CFO", "email": "divya@drift.example.com", "phone": "+91 90000 10010",
-             "attr": {"utm_source": "google", "utm_medium": "cpc", "utm_campaign": "erp-migration-search", "utm_term": "sap alternative", "landing_page_url": GADS}},
-            {"ci": 9, "full_name": "Imran Qureshi", "role": "Head of Ops", "email": "imran@keystone.example.com", "phone": "+91 90000 10011",
-             "attr": {"utm_source": "linkedin", "utm_medium": "organic", "utm_campaign": None, "landing_page_url": "https://dracara.dev/blog/scaling-delivery"}},
-            {"ci": 3, "full_name": "Leena Thomas", "role": "PMO", "email": "leena@copper.example.com", "phone": "+91 90000 10012",
-             "attr": {"utm_source": "facebook", "utm_medium": "cpc", "utm_campaign": "q3-mvp-sprint", "utm_content": "founder-video-a", "landing_page_url": META}},
+            {"ci": 0, "full_name": "Aditi Rao", "role": "VP Engineering", "email": "aditi@nova.example.com", "phone": "+91 90000 10001"},
+            {"ci": 0, "full_name": "Rohit Menon", "role": "Procurement", "email": "rohit@nova.example.com", "phone": "+91 90000 10002"},
+            {"ci": 1, "full_name": "Sandra Baxter", "role": "Analytics Lead", "email": "sandra@riverbank.example.com", "phone": "+91 90000 10003"},
+            {"ci": 2, "full_name": "Vikram Shah", "role": "CTO", "email": "vikram@meridian.example.com", "phone": "+91 90000 10004"},
+            {"ci": 3, "full_name": "Meera Iyer", "role": "Plant Head", "email": "meera@copper.example.com", "phone": "+91 90000 10005"},
+            {"ci": 4, "full_name": "Ananya Das", "role": "COO", "email": "ananya@brightcart.example.com", "phone": "+91 90000 10006"},
+            {"ci": 5, "full_name": "Karthik Nambiar", "role": "Creative Director", "email": "karthik@skyline.example.com", "phone": "+91 90000 10007"},
+            {"ci": 6, "full_name": "Neha Kapoor", "role": "Program Director", "email": "neha@atlas.example.com", "phone": "+91 90000 10008"},
+            {"ci": 7, "full_name": "Arjun Pillai", "role": "Principal", "email": "arjun@pinewood.example.com", "phone": "+91 90000 10009"},
+            {"ci": 8, "full_name": "Divya Krishnan", "role": "CFO", "email": "divya@drift.example.com", "phone": "+91 90000 10010"},
+            {"ci": 9, "full_name": "Imran Qureshi", "role": "Head of Ops", "email": "imran@keystone.example.com", "phone": "+91 90000 10011"},
+            {"ci": 3, "full_name": "Leena Thomas", "role": "PMO", "email": "leena@copper.example.com", "phone": "+91 90000 10012"},
         ]
 
         contact_ids: list[str] = []
         for i, cs in enumerate(contacts_spec):
             prev_ci = contacts_spec[i - 1]["ci"] if i else None
             is_primary = prev_ci is None or cs["ci"] != prev_ci
-            attr = cs.get("attr")
+            attr = CONTACT_ATTRIBUTION.get(cs["full_name"])
             row = {
                 "company_id": company_ids[cs["ci"]],
                 "full_name": cs["full_name"],
@@ -410,7 +502,7 @@ def main() -> None:
                 "is_primary": is_primary,
                 # Same derivation the public capture endpoint applies, so seeded and captured
                 # contacts are indistinguishable downstream.
-                "source": cs.get("source")
+                "source": CONTACT_MANUAL_SOURCE.get(cs["full_name"])
                 or (derive_lead_source(attr.get("utm_source"), attr.get("utm_medium")) if attr else "other"),
             }
             if attr:
