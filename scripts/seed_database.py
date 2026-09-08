@@ -352,8 +352,21 @@ def backfill_attribution(
             channel = attr.get("utm_source") if attr else body["source"]
             print(f"  + {full_name}: {channel}")
 
+    # Anything in this organization that is not a seed contact is left alone. Fuzzy-matching
+    # would be guessing: "Leena Thom" may well be a renamed "Leena Thomas", but it may equally
+    # be a different person, and this writes to a real tenant's records.
+    others = client.get(
+        f"{base}/rest/v1/contacts",
+        params={"select": "full_name", "organization_id": f"eq.{organization_id}"},
+        headers=rest_headers(service_key),
+    )
+    others.raise_for_status()
+    unknown = [c["full_name"] for c in others.json() if c["full_name"] not in CONTACT_ATTRIBUTION]
+
     print("")
     print(f"Backfilled {updated} contact(s); {skipped} already had attribution.")
+    if unknown:
+        print(f"Left alone (not seed contacts): {', '.join(sorted(unknown))}")
 
 
 def get_opportunity_for_lead(client: httpx.Client, base: str, service_key: str, lead_id: str) -> dict[str, Any]:
@@ -384,6 +397,15 @@ def main() -> None:
             "Update existing seeded contacts with UTM attribution instead of inserting. "
             "For a database seeded before attribution existed: --force would add a second "
             "copy of every company, contact and lead rather than enriching the ones there."
+        ),
+    )
+    parser.add_argument(
+        "--organization-id",
+        help=(
+            "Which tenant --backfill-attribution targets. Defaults to the Dracara seed org. "
+            "Required to reach an organization the seed did not create, such as the one a "
+            "real signup makes -- the backfill is deliberately single-tenant, since it runs "
+            "on the service-role key with no row-level security filtering it."
         ),
     )
     args = parser.parse_args()
@@ -425,7 +447,9 @@ def main() -> None:
             return
 
         if args.backfill_attribution:
-            backfill_attribution(client, base, service_key, dracara_org_id)
+            backfill_attribution(
+                client, base, service_key, args.organization_id or dracara_org_id
+            )
             return
 
         # Avoid duplicate seed rows on re-run (FK explosions)
