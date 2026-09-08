@@ -124,13 +124,13 @@ export default function OpportunityRemindersPage() {
                     className={cn(
                       "min-h-[110px] border-b border-r border-border/30 p-2 transition-colors",
                       !isSameMonth(day, monthStart) && "bg-muted/5 opacity-40",
-                      isSameDay(day, new Date()) && "bg-indigo-50/30 dark:bg-indigo-900/10"
+                      isSameDay(day, new Date()) && "bg-[#0B7FB3]/8 dark:bg-[#0B7FB3]/10"
                     )}
                   >
                     <span
                       className={cn(
                         "inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-medium",
-                        isSameDay(day, new Date()) && "bg-indigo-600 text-white shadow-sm"
+                        isSameDay(day, new Date()) && "bg-[#0B7FB3] text-white shadow-sm"
                       )}
                     >
                       {format(day, "d")}
@@ -139,7 +139,7 @@ export default function OpportunityRemindersPage() {
                       {dayMeetings.map((m) => (
                         <div
                           key={m.id}
-                          className="truncate rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200"
+                          className="truncate rounded bg-[#0B7FB3]/15 px-1.5 py-0.5 text-[10px] font-medium text-[#096892] dark:bg-[#0B7FB3]/30 dark:text-[#4FB8E3]"
                         >
                           {m.title}
                         </div>

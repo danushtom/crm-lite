@@ -7,6 +7,8 @@ export interface Role {
   is_system: boolean;
   permissions: string[];
   user_count: number;
+  /** Monotonic row version, returned as an ETag and sent back via If-Match. */
+  version: number;
 }
 
 export type VoiceAgentDirection = "inbound" | "outbound" | "both";
@@ -311,7 +313,10 @@ export type ProposalDocStatus = "draft" | "sent" | "under_review" | "accepted" |
 export interface ProposalRow {
   id: string;
   opportunity_id: string;
+  /** Document version shown to users (v1, v2, ...). Not the concurrency counter. */
   version: number;
+  /** Monotonic row version, returned as an ETag and sent back via If-Match. */
+  row_version: number;
   title: string;
   file_url: string | null;
   figma_url: string | null;

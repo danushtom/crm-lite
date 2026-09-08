@@ -44,7 +44,7 @@ export default function OpportunityNotesPage() {
           <div key={field.key} className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{field.label}</label>
             <textarea
-              className="min-h-[120px] w-full rounded-xl border border-border/70 bg-card p-4 text-sm shadow-sm transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+              className="min-h-[120px] w-full rounded-xl border border-border/70 bg-card p-4 text-sm shadow-sm transition-all focus:border-[#0B7FB3] focus:ring-2 focus:ring-[#0B7FB3]/20"
               defaultValue={String(opp[field.key] ?? "")}
               placeholder={field.placeholder}
               onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
@@ -61,7 +61,7 @@ export default function OpportunityNotesPage() {
         <Button 
           onClick={() => save.mutate()} 
           disabled={save.isPending || Object.keys(form).length === 0}
-          className="gap-2 bg-indigo-600 hover:bg-indigo-700"
+          className="gap-2 bg-[#0B7FB3] hover:bg-[#096892]"
         >
           <Save className="h-4 w-4" />
           {save.isPending ? "Saving..." : "Save Technical Context"}

@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Response, status
 
 from app.api.deps import DbDep
-from app.core.concurrency import IfMatchDep, set_etag, update_guarded
+from app.core.concurrency import IfMatchDep, delete_guarded, set_etag, update_guarded
 from app.core.errors import ConflictError
 from app.domain.enums import ProposalStatus
 from app.schemas.common import ERROR_RESPONSES
@@ -31,7 +31,7 @@ router = APIRouter(prefix="/proposals", tags=["Proposals"])
 async def get_proposal(proposal_id: str, db: DbDep, response: Response) -> Proposal:
     result = await db.select("proposals", params={"select": "*", "id": f"eq.{proposal_id}"})
     row = result.one("Proposal")
-    set_etag(response, row)
+    set_etag(response, row, version_column="row_version")
     return Proposal.model_validate(row)
 
 
@@ -71,8 +71,9 @@ async def update_proposal(
         changes=changes,
         if_match=if_match,
         what="Proposal",
+        version_column="row_version",
     )
-    set_etag(response, row)
+    set_etag(response, row, version_column="row_version")
     return Proposal.model_validate(row)
 
 
@@ -87,9 +88,9 @@ async def update_proposal(
     ),
     responses=ERROR_RESPONSES,
 )
-async def delete_proposal(proposal_id: str, db: DbDep) -> Response:
+async def delete_proposal(proposal_id: str, db: DbDep, if_match: IfMatchDep) -> Response:
     existing = await db.select(
-        "proposals", params={"select": "id,status,version", "id": f"eq.{proposal_id}"}
+        "proposals", params={"select": "id,status,row_version", "id": f"eq.{proposal_id}"}
     )
     row = existing.one("Proposal")
 
@@ -99,5 +100,12 @@ async def delete_proposal(proposal_id: str, db: DbDep) -> Response:
             "version history stays intact."
         )
 
-    await db.delete("proposals", {"id": f"eq.{proposal_id}"})
+    await delete_guarded(
+        db,
+        "proposals",
+        record_id=proposal_id,
+        if_match=if_match,
+        what="Proposal",
+        version_column="row_version",
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -58,12 +58,12 @@ export function OpportunityHero({ id }: { id: string }) {
     <Card className="overflow-hidden rounded-xl border border-border/70 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
       <CardContent className="p-0">
         <div className="flex flex-col gap-4 p-4 sm:p-5 md:flex-row md:items-start">
-          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-gradient-to-br from-indigo-50 to-indigo-100/80 dark:from-indigo-950/50 dark:to-indigo-900/30">
+          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-gradient-to-br from-[#0B7FB3]/10 to-[#0B7FB3]/15 dark:from-[#0B7FB3]/25 dark:to-[#0B7FB3]/25">
             {company?.logo_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={company.logo_url} alt="" className="h-full w-full object-cover" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-indigo-800 dark:text-indigo-200">
+              <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-[#096892] dark:text-[#4FB8E3]">
                 {companyInitial}
               </div>
             )}
@@ -71,7 +71,7 @@ export function OpportunityHero({ id }: { id: string }) {
           <div className="min-w-0 flex-1 space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-600">Opportunity</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[#0B7FB3]">Opportunity</p>
                 <div className="mt-0.5 flex flex-wrap items-center gap-2">
                   <h1 className="text-xl font-bold tracking-tight text-[#0A1128] dark:text-foreground sm:text-2xl">
                     {opp.title}
@@ -100,7 +100,7 @@ export function OpportunityHero({ id }: { id: string }) {
               
               <div className="flex flex-col items-end gap-1 text-right">
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Badge className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200 font-semibold">
+                  <Badge className="bg-[#0B7FB3]/15 text-[#096892] dark:bg-[#0B7FB3]/30 dark:text-[#4FB8E3] font-semibold">
                     {stageLabel}
                   </Badge>
                   <Badge className={`font-semibold ${tierClass}`}>{tier} · {score}</Badge>

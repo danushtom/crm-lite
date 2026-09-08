@@ -14,8 +14,8 @@ from typing import Any
 from fastapi import APIRouter, Response, status
 
 from app.api.deps import AdminDep, DbDep
-from app.core.concurrency import IfMatchDep, PreconditionFailedError, set_etag, update_guarded
-from app.core.errors import ForbiddenError, UnprocessableError
+from app.core.concurrency import IfMatchDep, PreconditionFailedError, delete_guarded, set_etag, update_guarded
+from app.core.errors import UnprocessableError
 from app.schemas.common import ERROR_RESPONSES
 from app.schemas.roles import Permission, Role, RoleCreate, RoleUpdate
 
@@ -212,11 +212,6 @@ async def update_role(
     ),
     responses=ERROR_RESPONSES,
 )
-async def delete_role(role_id: str, db: DbDep, _admin: AdminDep) -> Response:
-    existing = await db.select("roles", params={"select": "id", "id": f"eq.{role_id}"})
-    existing.one("Role")
-
-    deleted = await db.delete("roles", {"id": f"eq.{role_id}"})
-    if deleted.first() is None:
-        raise ForbiddenError("You do not have permission to delete this role")
+async def delete_role(role_id: str, db: DbDep, if_match: IfMatchDep, _admin: AdminDep) -> Response:
+    await delete_guarded(db, "roles", record_id=role_id, if_match=if_match, what="Role")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -7,8 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentUserDep, DbDep
-from app.core.concurrency import IfMatchDep, set_etag, update_guarded
-from app.core.errors import ForbiddenError
+from app.core.concurrency import IfMatchDep, delete_guarded, set_etag, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.domain.enums import MeetingStatus
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
@@ -136,11 +135,6 @@ async def update_meeting(
     ),
     responses=ERROR_RESPONSES,
 )
-async def delete_meeting(meeting_id: str, db: DbDep) -> Response:
-    existing = await db.select("meetings", params={"select": "id", "id": f"eq.{meeting_id}"})
-    existing.one("Meeting")
-
-    deleted = await db.delete("meetings", {"id": f"eq.{meeting_id}"})
-    if deleted.first() is None:
-        raise ForbiddenError("You do not have permission to delete this meeting")
+async def delete_meeting(meeting_id: str, db: DbDep, if_match: IfMatchDep) -> Response:
+    await delete_guarded(db, "meetings", record_id=meeting_id, if_match=if_match, what="Meeting")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

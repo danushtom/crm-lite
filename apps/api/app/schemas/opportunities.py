@@ -57,7 +57,13 @@ class OpportunityUpdate(PatchModel):
 class Proposal(APIModel):
     id: str
     opportunity_id: str
-    version: int
+    version: int = Field(
+        description="Document version shown to users (v1, v2, ...). Not the concurrency counter."
+    )
+    row_version: int = Field(
+        default=1,
+        description="Monotonic row version. Returned as an ETag; send it back via If-Match.",
+    )
     title: str
     file_url: str | None = None
     figma_url: str | None = None

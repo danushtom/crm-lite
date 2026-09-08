@@ -42,13 +42,13 @@ export default function OpportunityInteractionsPage() {
         <div className="relative space-y-6 before:absolute before:inset-0 before:ml-5 before:-translate-x-px before:h-full before:w-0.5 before:bg-border/50">
           {rows.map((a) => (
             <div key={String(a.id)} className="relative flex items-start gap-6 group">
-              <div className="z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-4 border-background bg-indigo-100 text-indigo-600 shadow-sm">
+              <div className="z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-4 border-background bg-[#0B7FB3]/15 text-[#0B7FB3] shadow-sm">
                 <Clock className="h-4 w-4" />
               </div>
               <Card className="flex-1 rounded-xl border border-border/70 shadow-sm transition-shadow hover:shadow-md">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600">{String(a.type)}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#0B7FB3]">{String(a.type)}</span>
                     <span className="text-[11px] text-muted-foreground">
                       {a.performed_at ? format(parseISO(String(a.performed_at)), "MMM d, yyyy · h:mm a") : "—"}
                     </span>

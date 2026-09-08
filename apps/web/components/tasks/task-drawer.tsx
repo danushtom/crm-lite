@@ -114,7 +114,11 @@ export function TaskDrawer({
 
   const remove = useApiMutation({
     errorTitle: "Could not delete this task",
-    mutationFn: () => apiFetch(`/tasks/${task.id}`, { method: "DELETE" }),
+    mutationFn: () =>
+      apiFetch(`/tasks/${task.id}`, {
+        method: "DELETE",
+        headers: { "If-Match": `"${task.version}"` },
+      }),
     onSuccess: () => {
       invalidate();
       toast.success("Task deleted");

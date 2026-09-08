@@ -10,7 +10,10 @@ export default function OpportunityLayout({ children }: { children: React.ReactN
   const { id } = useParams<{ id: string }>();
 
   return (
-    <div className="w-full space-y-4 p-4 sm:p-6 lg:p-8">
+    <div className="w-full space-y-4">
+      {/* No padding on this container: the app shell's <main> already sets px-4 lg:px-6, and
+          adding a second layer here left every opportunity sub-route inset further than the
+          rest of the app. */}
       <div className="flex items-center gap-2">
         <Link 
           href="/opportunities" 

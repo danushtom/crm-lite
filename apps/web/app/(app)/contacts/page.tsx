@@ -19,15 +19,12 @@ import { useApiMutation } from "@/lib/use-api-mutation";
 import {
   ChevronDown,
   ChevronsUpDown,
-  Clock3,
   Filter,
   LayoutGrid,
   List,
   Plus,
   SlidersHorizontal,
   Sparkles,
-  UserPlus,
-  WalletCards,
   MoreHorizontal,
   Trash2,
   Mail,
@@ -42,6 +39,8 @@ import Link from "next/link";
 import { ContactDrawer } from "@/components/contacts/contact-drawer";
 import { ContactsGallery } from "@/components/contacts/contacts-gallery";
 import { TablePagination } from "@/components/shared/table-pagination";
+import { StatsStrip } from "@/components/shared/stats-strip";
+import { LogActivityDrawer } from "@/components/activities/log-activity-drawer";
 import { usePagination } from "@/lib/use-table-controls";
 import { cn } from "@dracara/ui";
 import { leadStage } from "@/lib/leads";
@@ -80,11 +79,6 @@ function formatCompactCurrency(n: number): string {
   }).format(n);
 }
 
-function toK(n: number): string {
-  if (n >= 1000) return `$${Math.round(n / 10) / 100}K`;
-  return `$${Math.round(n)}`;
-}
-
 type ContactWithCompany = ContactRow & { companies?: { name?: string | null } | null };
 
 function contactPipelineStage(contact: ContactRow, leads: LeadWithOpportunities[]): CompanyStage {
@@ -120,21 +114,6 @@ export default function ContactsPage() {
   // shrinking the table is visible rather than hidden behind a collapsed toggle.
   const [showFilters, setShowFilters] = useState(Boolean(searchParams.get("q")));
   const [showSort, setShowSort] = useState(false);
-  const [isStatsCollapsed, setIsStatsCollapsed] = useState(false);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("crm-stats-collapsed");
-    if (saved) {
-      setIsStatsCollapsed(saved === "true");
-    }
-  }, []);
-
-  const toggleStats = () => {
-    const next = !isStatsCollapsed;
-    setIsStatsCollapsed(next);
-    localStorage.setItem("crm-stats-collapsed", next.toString());
-  };
-
   const { data: rows = [], isLoading, error } = useQuery({
     queryKey: ["contacts", "list"],
     queryFn: () => apiListAll<ContactWithCompany>("/contacts"),
@@ -217,6 +196,17 @@ export default function ContactsPage() {
     }
   };
 
+  /**
+   * The lead a contact's activity should attach to: the one they are the primary contact on,
+   * otherwise any lead at their company. Activities belong to leads, not contacts, so without
+   * one there is nothing to log against.
+   */
+  const contactLeadId = (contact: ContactWithCompany): string | null => {
+    const asPrimary = leads.find((l) => l.primary_contact_id === contact.id);
+    if (asPrimary) return asPrimary.id;
+    return leads.find((l) => l.company_id === contact.company_id)?.id ?? null;
+  };
+
   const summary = useMemo(() => {
     // Where these contacts came from, from the contacts themselves. These four rows were
     // hardcoded constants -- the same numbers regardless of the data.
@@ -233,7 +223,7 @@ export default function ContactsPage() {
       .map((c, i) => ({ ...c, mostEffective: i === 0 }));
 
     return {
-      average: rows.length,
+      total: rows.length,
       campaigns,
     };
   }, [rows]);
@@ -402,81 +392,28 @@ export default function ContactsPage() {
         </div>
       ) : null}
 
-      {/* Stats Card */}
-      <Card className="rounded-xl border border-border/70 bg-card shadow-[0_1px_3px_rgba(15,23,42,0.06)] overflow-hidden">
-        <CardContent className={cn("pt-4 transition-all duration-300", isStatsCollapsed ? "pb-4" : "pb-6")}>
-          <div className={cn("flex flex-col gap-3 transition-all duration-300", isStatsCollapsed ? "md:flex-row md:items-center md:justify-between" : "md:flex-row md:items-start md:justify-between")}>
-            <div className={cn("flex transition-all duration-300", isStatsCollapsed ? "items-center gap-3" : "flex-col")}>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-foreground">Cust. Acquisition Cost</p>
-                <Badge className="h-5 rounded-md bg-rose-100 px-1.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
-                  - 4%
-                </Badge>
-              </div>
-              <p className={cn(
-                "font-semibold tracking-tight text-[#0A1128] dark:text-foreground transition-all duration-300", 
-                isStatsCollapsed ? "text-xl mt-0" : "text-[38px] leading-none mt-2"
-              )}>
-                <span className={cn("text-muted-foreground transition-all duration-300", isStatsCollapsed ? "text-lg" : "text-[28px]")}>$</span>462<span className={cn("text-muted-foreground transition-all duration-300", isStatsCollapsed ? "text-lg" : "text-[28px]")}>.72</span>
-                <span className={cn("ml-2 font-medium text-muted-foreground transition-all duration-300", isStatsCollapsed ? "text-[11px]" : "text-xs")}>average</span>
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-                <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
-                History
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-                <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
-                Assign Task
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-md border-border/70 px-3 text-xs">
-                <WalletCards className="h-3.5 w-3.5 text-muted-foreground" />
-                Adjust Spend
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-8 gap-1 rounded-md border-border/70 px-3 text-xs font-semibold"
-                onClick={toggleStats}
-              >
-                {isStatsCollapsed ? "Expand" : "Collapse"}
-                <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", isStatsCollapsed ? "" : "rotate-180")} />
-              </Button>
-            </div>
-          </div>
-
-          <div className={cn(
-            "grid md:grid-cols-4 overflow-hidden transition-all duration-300 ease-in-out",
-            isStatsCollapsed ? "max-h-0 opacity-0 gap-0 mt-0" : "max-h-[500px] opacity-100 gap-2 mt-4"
-          )}>
-            {summary.campaigns.map((campaign, i) => {
-              const colors = ["bg-[#18395B]", "bg-[#2FA8E8]", "bg-[#45B2F0]", "bg-[#E2E8F0]"];
-              const barColor = colors[i] || colors[0];
-              return (
-                <div key={campaign.name} className="rounded-sm border border-border/70 bg-white px-3 pb-2 pt-3 dark:bg-card">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[22px] font-semibold text-[#0A1128] dark:text-foreground">{toK(campaign.value)}</p>
-                    {campaign.mostEffective ? (
-                      <Badge className="h-5 rounded-md bg-emerald-100 px-2 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                        Most Effective
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Bring <span className="font-semibold text-foreground">{campaign.pct}%</span> new cust
-                  </p>
-                  <div className={`mt-2 h-1 w-full rounded ${barColor}`} />
-                  <p className="mt-2 text-sm font-medium text-foreground flex items-center gap-1.5">
-                    <span className={`inline-block h-2 w-2 rounded-sm ${barColor}`} />
-                    {campaign.name}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+      {/* The headline here read "Cust. Acquisition Cost -- $462.72 average, -4%". All three
+          numbers were literals. Nothing in the product measures acquisition cost: the
+          marketing_channel_metrics table that would hold spend has no API and no writer, so
+          the figure could not be made real. The tiles beneath it were already a genuine
+          source breakdown, so the headline now describes those. History / Assign Task /
+          Adjust Spend sat alongside and were three more buttons with no handler; none of them
+          has a meaning at page level with no contact selected, so they are gone rather than
+          reimplemented as something they never were. */}
+      <StatsStrip
+        headlineLabel="Contacts"
+        headline={String(summary.total)}
+        tiles={summary.campaigns.map((campaign) => ({
+          label: campaign.name,
+          value: String(campaign.value),
+          hint: (
+            <>
+              <span className="font-semibold text-foreground">{campaign.pct}%</span> of contacts
+            </>
+          ),
+          emphasis: campaign.mostEffective,
+        }))}
+      />
 
       {/* Editable Table */}
       <Card className="rounded-xl border border-border/70 shadow-[0_1px_3px_rgba(15,23,42,0.06)] overflow-hidden">
@@ -671,14 +608,42 @@ export default function ContactsPage() {
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-40">
-                            <DropdownMenuItem className="gap-2">
+                            {/* Both of these were menu items with no handler. */}
+                            <DropdownMenuItem
+                              className="gap-2"
+                              disabled={!c.email}
+                              onClick={() => {
+                                if (c.email) window.location.href = `mailto:${c.email}`;
+                              }}
+                            >
                               <Mail className="h-3.5 w-3.5" />
-                              Send Email
+                              Send email
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="gap-2">
-                              <Phone className="h-3.5 w-3.5" />
-                              Log Call
-                            </DropdownMenuItem>
+                            {contactLeadId(c) ? (
+                              <LogActivityDrawer
+                                leadId={contactLeadId(c)!}
+                                type="call"
+                                title="Log a call"
+                                trigger={
+                                  <DropdownMenuItem
+                                    className="gap-2"
+                                    onSelect={(e) => e.preventDefault()}
+                                  >
+                                    <Phone className="h-3.5 w-3.5" />
+                                    Log call
+                                  </DropdownMenuItem>
+                                }
+                              />
+                            ) : (
+                              <DropdownMenuItem
+                                className="gap-2"
+                                disabled
+                                title="A call is logged against a lead; this contact has none."
+                              >
+                                <Phone className="h-3.5 w-3.5" />
+                                Log call
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem 
                               className="gap-2 text-rose-600 focus:text-rose-600 focus:bg-rose-50"

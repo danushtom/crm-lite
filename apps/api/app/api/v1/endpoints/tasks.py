@@ -8,8 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentUserDep, DbDep
-from app.core.errors import ForbiddenError
-from app.core.concurrency import IfMatchDep, set_etag, update_guarded
+from app.core.concurrency import IfMatchDep, delete_guarded, set_etag, update_guarded
 from app.core.pagination import Page, PageParamsDep
 from app.domain.enums import TaskStatus
 from app.schemas.common import AUTH_RESPONSES, ERROR_RESPONSES
@@ -108,11 +107,6 @@ async def update_task(
     ),
     responses=ERROR_RESPONSES,
 )
-async def delete_task(task_id: str, db: DbDep) -> Response:
-    existing = await db.select("tasks", params={"select": "id", "id": f"eq.{task_id}"})
-    existing.one("Task")
-
-    deleted = await db.delete("tasks", {"id": f"eq.{task_id}"})
-    if deleted.first() is None:
-        raise ForbiddenError("You do not have permission to delete this task")
+async def delete_task(task_id: str, db: DbDep, if_match: IfMatchDep) -> Response:
+    await delete_guarded(db, "tasks", record_id=task_id, if_match=if_match, what="Task")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

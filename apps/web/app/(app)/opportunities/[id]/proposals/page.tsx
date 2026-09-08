@@ -59,7 +59,7 @@ export default function ProposalsPage() {
               <CardContent className="p-0">
                 <div className="flex flex-col sm:flex-row">
                   <div className="flex flex-1 items-center gap-4 p-5">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[#0B7FB3]/10 text-[#0B7FB3] dark:bg-[#0B7FB3]/25 dark:text-[#4FB8E3]">
                       <FileText className="h-6 w-6" />
                     </div>
                     <div className="min-w-0 flex-1">

@@ -7,19 +7,18 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronsUpDown,
-  Clock3,
   LayoutGrid,
   Linkedin,
   List,
   Search,
-  UserPlus,
-  WalletCards,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useState, useMemo, useEffect } from "react";
 import { apiListAll } from "@/lib/api";
 import { leadStage, leadValue } from "@/lib/leads";
 import { CompaniesGallery } from "@/components/companies/companies-gallery";
+import { Avatar } from "@/components/shared/avatar";
 import { TablePagination } from "@/components/shared/table-pagination";
 import { compareValues, usePagination, useSort } from "@/lib/use-table-controls";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -54,13 +53,6 @@ function leadStageToCompanyStage(stage?: string | null): CompanyStage {
   if (stage === "lost") return "Lost";
   if (stage === "discovery_scheduled" || stage === "requirements_gathering") return "Discovery";
   return "Leads";
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
-  return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
 }
 
 function formatCompactCurrency(n: number): string {
@@ -406,15 +398,22 @@ export default function CompaniesPage() {
                     className="group border-b border-border/50 transition-colors hover:bg-muted/30 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
-                      <td className="py-2.5 pr-4 text-[13px] font-semibold text-foreground">{c.name}</td>
+                      <td className="py-2.5 pr-4">
+                        {/* The list had no way into a company at all; only the gallery linked
+                            here, and until now that link 404ed. */}
+                        <Link
+                          href={`/companies/${c.id}`}
+                          className="text-[13px] font-semibold text-foreground hover:underline hover:underline-offset-2"
+                        >
+                          {c.name}
+                        </Link>
+                      </td>
                       <td className="py-2.5 pr-4">
                         <Badge className={`font-medium ${STAGE_VARIANTS[c.stage]}`}>{c.stage}</Badge>
                       </td>
                       <td className="py-2.5 pr-4">
                         <div className="flex items-center gap-2.5">
-                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-[11px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-100">
-                            {initials(c.contactName)}
-                          </span>
+                          <Avatar name={c.contactName} />
                           <div className="leading-tight">
                             <p className="text-[13px] font-semibold text-foreground">{c.contactName}</p>
                             <p className="text-[11px] text-muted-foreground">{c.contactsCount} total</p>

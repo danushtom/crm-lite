@@ -93,7 +93,11 @@ export function RoleDrawer({ role, trigger }: { role?: Role; trigger: React.Reac
 
   const del = useApiMutation({
     errorTitle: "Could not delete this role",
-    mutationFn: () => apiFetch(`/roles/${role!.id}`, { method: "DELETE" }),
+    mutationFn: () =>
+      apiFetch(`/roles/${role!.id}`, {
+        method: "DELETE",
+        headers: { "If-Match": `"${role!.version}"` },
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["roles"] });
       qc.invalidateQueries({ queryKey: ["agents"] });

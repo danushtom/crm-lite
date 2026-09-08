@@ -60,9 +60,13 @@ def etag_for(version: Any) -> str:
     return f'"{version}"'
 
 
-def set_etag(response: Response, row: dict[str, Any]) -> None:
-    """Attach the row's version as an ETag, when the table carries one."""
-    version = row.get("version")
+def set_etag(response: Response, row: dict[str, Any], version_column: str = "version") -> None:
+    """Attach the row's version as an ETag, when the table carries one.
+
+    ``version_column`` exists for ``proposals``, where ``version`` is the user-facing document
+    number (v1, v2, ...) and ``row_version`` is the concurrency counter.
+    """
+    version = row.get(version_column)
     if version is not None:
         response.headers["ETag"] = etag_for(version)
 
@@ -111,6 +115,7 @@ async def update_guarded(
     what: str,
     id_column: str = "id",
     select: str = "*",
+    version_column: str = "version",
 ) -> dict[str, Any]:
     """Apply an update, honouring If-Match when the caller supplied one.
 
@@ -121,7 +126,7 @@ async def update_guarded(
     """
     params = {id_column: f"eq.{record_id}", "select": select}
     if isinstance(if_match, int):
-        params["version"] = f"eq.{if_match}"
+        params[version_column] = f"eq.{if_match}"
 
     result = await db.update(table, params, changes)
     row = result.first()
@@ -138,9 +143,9 @@ async def update_guarded(
     if isinstance(if_match, int):
         raise PreconditionFailedError(
             f"{what} has been modified since you last read it "
-            f"(expected version {if_match}, current version {existing.get('version')}). "
+            f"(expected version {if_match}, current version {existing.get(version_column)}). "
             "Refetch and reapply your changes.",
-            extra={"current_version": existing.get("version")},
+            extra={"current_version": existing.get(version_column)},
         )
 
     # The row exists and no precondition was set, so row-level security filtered the write.
@@ -196,6 +201,54 @@ async def soft_delete_guarded(
             f"(current version {outcome.get('current_version')}).",
             extra={"current_version": outcome.get("current_version")},
         )
+    raise PreconditionFailedError(
+        f"You do not have permission to delete this {what.lower()}",
+        code="forbidden",
+        title="Forbidden",
+        status_code=403,
+    )
+
+
+async def delete_guarded(
+    db: SupabaseClient,
+    table: str,
+    *,
+    record_id: str,
+    if_match: int | None | str,
+    what: str,
+    version_column: str = "version",
+) -> None:
+    """Hard-delete a row, honouring If-Match when the caller supplied one.
+
+    The counterpart to ``soft_delete_guarded`` for the tables that are genuinely removed rather
+    than retained: meetings, tasks, proposals and roles carry a ``version`` like every other
+    mutable row, but their DELETE handlers accepted no precondition at all, so a client holding
+    a stale copy could delete a row that had changed underneath it -- a completed task, a
+    rescheduled meeting, a proposal that had since been sent. As with the update path, the
+    version check and the delete are one statement, so nothing can slip in between.
+    """
+    params = {"id": f"eq.{record_id}"}
+    if isinstance(if_match, int):
+        params[version_column] = f"eq.{if_match}"
+
+    result = await db.delete(table, params)
+    if result.first() is not None:
+        return
+
+    # Nothing deleted: separate "already gone" from "it moved on" from "not yours".
+    current = await db.select(table, params={"select": "*", "id": f"eq.{record_id}"})
+    existing = current.first()
+    if existing is None:
+        raise NotFoundError(f"{what} not found")
+
+    if isinstance(if_match, int):
+        raise PreconditionFailedError(
+            f"{what} has been modified since you last read it "
+            f"(expected version {if_match}, current version {existing.get(version_column)}). "
+            "Refetch and check it is still the row you meant to delete.",
+            extra={"current_version": existing.get(version_column)},
+        )
+
     raise PreconditionFailedError(
         f"You do not have permission to delete this {what.lower()}",
         code="forbidden",

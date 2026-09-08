@@ -198,37 +198,15 @@ export function AppShell({
               <span>Settings</span>
               <ChevronRight className="h-4 w-4 opacity-50" />
             </Link>
-            <Link
-              href="/reports"
-              className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-            >
-              <span>Help Center</span>
-              <ChevronRight className="h-4 w-4 opacity-50" />
-            </Link>
           </div>
         ) : null}
 
-        {!collapsed ? (
-          <div className="mx-3 mb-3 rounded-xl border border-border bg-muted/30 p-3 lg:mx-4">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground">Cloud Storage</span>
-              <span className="text-xs font-semibold text-[#0A1128] dark:text-foreground">90%</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div className="h-full w-[90%] rounded-full bg-gradient-to-r from-amber-400 to-orange-500" />
-            </div>
-            <p className="mt-2 text-[11px] leading-snug text-muted-foreground">1.8 GB of 2 GB used</p>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-2 h-8 w-full justify-between px-2 text-xs font-semibold text-[hsl(var(--primary))]"
-              type="button"
-            >
-              Upgrade Storage
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        ) : null}
+        {/* A "Cloud Storage - 90% / 1.8 GB of 2 GB used" meter used to sit here above an
+            "Upgrade Storage" button. All three numbers were literals: nothing measures
+            storage, there is no quota endpoint, and there are no plan tiers to upgrade to,
+            so the button had no handler either. A usage meter that invents its own reading
+            is worse than no meter, and a paywall CTA for a product with no billing is worse
+            still. Removed until there is something real to show. */}
 
         <div className="mt-auto border-t border-border p-3 lg:p-4">
           {!collapsed ? (

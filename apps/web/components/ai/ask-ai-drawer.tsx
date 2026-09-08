@@ -47,7 +47,7 @@ export function AskAiDrawer({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#0B7FB3] to-purple-600 text-white">
               <Sparkles className="h-4 w-4" />
             </div>
             <div>

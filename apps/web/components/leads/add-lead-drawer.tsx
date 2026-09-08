@@ -145,7 +145,7 @@ export function AddLeadDrawer() {
         className="w-[400px] overflow-y-auto border-l border-border/60 sm:w-[540px]"
       >
         <SheetHeader className="border-b border-border/50 pb-4">
-          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[#0B7FB3]/10 text-[#0B7FB3] dark:bg-[#0B7FB3]/25 dark:text-[#4FB8E3]">
             <Target className="h-5 w-5" />
           </div>
           <SheetTitle className="text-xl">Add New Lead</SheetTitle>

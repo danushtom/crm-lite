@@ -20,7 +20,7 @@ export type ProposalSummary = {
   github_url?: string | null;
   loom_url?: string | null;
   change_notes?: string | null;
-  version_row?: number;
+  row_version?: number;
 };
 
 const STATUS_OPTIONS = [
@@ -136,7 +136,13 @@ export function ProposalDrawer({
 
   const remove = useApiMutation({
     errorTitle: "Could not delete proposal",
-    mutationFn: () => apiFetch(`/proposals/${proposal!.id}`, { method: "DELETE" }),
+    mutationFn: () =>
+      apiFetch(`/proposals/${proposal!.id}`, {
+        method: "DELETE",
+        headers: proposal!.row_version
+          ? { "If-Match": `"${proposal!.row_version}"` }
+          : undefined,
+      }),
     onSuccess: () => {
       invalidate();
       toast.success("Draft deleted");
@@ -147,7 +153,7 @@ export function ProposalDrawer({
   const isDraft = proposal?.status === "draft";
 
   const defaultTrigger = (
-    <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700">
+    <Button className="gap-2 bg-[#0B7FB3] hover:bg-[#096892]">
       <Plus className="h-4 w-4" />
       New proposal
     </Button>

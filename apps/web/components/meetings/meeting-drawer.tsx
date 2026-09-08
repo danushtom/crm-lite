@@ -147,7 +147,11 @@ export function MeetingDrawer({
 
   const remove = useApiMutation({
     errorTitle: "Could not delete meeting",
-    mutationFn: () => apiFetch(`/meetings/${meeting!.id}`, { method: "DELETE" }),
+    mutationFn: () =>
+      apiFetch(`/meetings/${meeting!.id}`, {
+        method: "DELETE",
+        headers: { "If-Match": `"${meeting!.version}"` },
+      }),
     onSuccess: () => {
       invalidate();
       toast.success("Meeting deleted");

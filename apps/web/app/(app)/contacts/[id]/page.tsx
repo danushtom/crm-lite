@@ -43,6 +43,8 @@ import {
 import { useMemo, useState } from "react";
 import { apiFetch, apiList, apiListAll } from "@/lib/api";
 import { ContactDrawer } from "@/components/contacts/contact-drawer";
+import { LogActivityDrawer } from "@/components/activities/log-activity-drawer";
+import { QuickReminderDrawer } from "@/components/tasks/quick-reminder-drawer";
 import { leadCurrency, leadScore, leadStage, leadValue } from "@/lib/leads";
 
 type ContactDetailTab = "overview" | "notes" | "conversations" | "timeline" | "reminders";
@@ -189,12 +191,15 @@ export default function ContactDetailsPage() {
   const city = locationParts[0]?.trim() || "-";
   const country = locationParts[1]?.trim() || "-";
 
+  // Notes, Conversations and Reminders each carried a literal count of 1, shown whether there
+  // were none, one or twenty. Reminders has a real number to show; the other two do not have a
+  // count on this page to draw from, so they show none rather than a made-up one.
   const pageTabs: { id: ContactDetailTab; label: string; count: number | null }[] = [
     { id: "overview", label: "Overview", count: null },
-    { id: "notes", label: "Notes", count: 1 },
-    { id: "conversations", label: "Conversations", count: 1 },
-    { id: "timeline" as ContactDetailTab, label: "Timeline", count: contactLeads.length },
-    { id: "reminders", label: "Reminders", count: 1 },
+    { id: "notes", label: "Notes", count: null },
+    { id: "conversations", label: "Conversations", count: meetings.length || null },
+    { id: "timeline" as ContactDetailTab, label: "Timeline", count: contactLeads.length || null },
+    { id: "reminders", label: "Reminders", count: tasks.length || null },
   ];
 
   const showLeadEvents = activeTab === "timeline";
@@ -309,34 +314,62 @@ export default function ContactDetailsPage() {
                   LinkedIn
                 </a>
               ) : null}
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-transparent px-3 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-              >
-                <MessageSquare className="h-3.5 w-3.5" />
-                Message
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-transparent px-3 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-              >
-                <Bell className="h-3.5 w-3.5" />
-                Reminder
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-transparent px-3 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Note
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-transparent px-3 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-              >
-                <PhoneCall className="h-3.5 w-3.5" />
-                Log call
-              </button>
+              {/* These four were buttons with no handler. Each one now drives an endpoint that
+                  already existed but had no caller from this page. They need a lead to hang
+                  off, since activities and tasks belong to a lead rather than to a contact --
+                  when there is no related lead there is nothing truthful for them to do, so
+                  they are disabled with a reason rather than silently doing nothing. */}
+              {primaryLead ? (
+                <>
+                  <LogActivityDrawer
+                    leadId={primaryLead.id}
+                    type="email"
+                    title="Log an email"
+                    trigger={
+                      <button type="button" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-transparent px-3 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Log email
+                      </button>
+                    }
+                  />
+                  <QuickReminderDrawer
+                    leadId={primaryLead.id}
+                    defaultTitle={`Follow up with ${contact.full_name}`}
+                    trigger={
+                      <button type="button" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-transparent px-3 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+                        <Bell className="h-3.5 w-3.5" />
+                        Reminder
+                      </button>
+                    }
+                  />
+                  <LogActivityDrawer
+                    leadId={primaryLead.id}
+                    type="note"
+                    title="Add a note"
+                    trigger={
+                      <button type="button" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-transparent px-3 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+                        <Plus className="h-3.5 w-3.5" />
+                        Note
+                      </button>
+                    }
+                  />
+                  <LogActivityDrawer
+                    leadId={primaryLead.id}
+                    type="call"
+                    title="Log a call"
+                    trigger={
+                      <button type="button" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-transparent px-3 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+                        <PhoneCall className="h-3.5 w-3.5" />
+                        Log call
+                      </button>
+                    }
+                  />
+                </>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Notes, calls and reminders attach to a lead. This contact has none yet.
+                </span>
+              )}
               {primaryLead ? (
                 <Button size="sm" className="ml-auto h-9 gap-1.5 bg-[#0A1128] text-xs text-white hover:bg-[#1a2a53] shadow-sm" asChild>
                   <Link href={`/leads/${primaryLead.id}`}>

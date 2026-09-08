@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { OpportunityDrawer } from "@/components/opportunities/opportunity-drawer";
+import type { ProposalRow } from "@dracara/types";
 import { ProposalDrawer } from "@/components/opportunities/proposal-drawer";
 import { 
   FileText, 
@@ -17,18 +18,10 @@ import {
   Percent, 
   Calendar,
   ExternalLink,
+  Pencil,
   Plus
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
-
-type Proposal = {
-  id: string;
-  version: number;
-  title: string;
-  status: string;
-  quoted_price: number;
-  created_at: string;
-};
 
 type OpportunityData = {
   id: string;
@@ -42,7 +35,7 @@ type OpportunityData = {
   tech_stack: string;
   requirements_doc: string;
   architecture_notes: string;
-  proposals?: Proposal[];
+  proposals?: ProposalRow[];
 };
 
 export default function OpportunityOverview() {
@@ -73,12 +66,15 @@ export default function OpportunityOverview() {
     </div>
   );
 
-  const formatCurrency = (val: number, curr: string) => {
+  // A proposal may carry no price at all, so this takes null rather than coercing an unpriced
+  // draft to a confident-looking zero.
+  const formatCurrency = (val: number | null | undefined, curr: string) => {
+    if (val == null) return "No price set";
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: curr || "USD",
       maximumFractionDigits: 0,
-    }).format(val || 0);
+    }).format(val);
   };
 
   const proposals = opp.proposals || [];
@@ -147,7 +143,7 @@ export default function OpportunityOverview() {
           <Card className="rounded-xl border border-border/70 shadow-sm">
             <CardHeader className="border-b border-border/50 pb-3">
               <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <Terminal className="h-4 w-4 text-indigo-600" />
+                <Terminal className="h-4 w-4 text-[#0B7FB3]" />
                 Technical Blueprint
               </CardTitle>
             </CardHeader>
@@ -181,13 +177,18 @@ export default function OpportunityOverview() {
           <Card className="rounded-xl border border-border/70 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 pb-3">
               <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <FileText className="h-4 w-4 text-indigo-600" />
+                <FileText className="h-4 w-4 text-[#0B7FB3]" />
                 Proposals
               </CardTitle>
-              <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-                <Plus className="h-3.5 w-3.5" />
-                New Version
-              </Button>
+              <ProposalDrawer
+                opportunityId={opp.id}
+                trigger={
+                  <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+                    <Plus className="h-3.5 w-3.5" />
+                    New version
+                  </Button>
+                }
+              />
             </CardHeader>
             <CardContent className="pt-4">
               {proposals.length > 0 ? (
@@ -196,7 +197,7 @@ export default function OpportunityOverview() {
                     <div key={p.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/10 p-3 hover:bg-muted/20 transition-colors group">
                       <div className="flex items-center gap-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded bg-white shadow-sm border border-border/50 dark:bg-card">
-                          <FileText className="h-5 w-5 text-indigo-500" />
+                          <FileText className="h-5 w-5 text-[#0B7FB3]" />
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-foreground">v{p.version} · {p.title}</p>
@@ -209,9 +210,33 @@ export default function OpportunityOverview() {
                         <Badge variant="outline" className="capitalize text-[10px]">
                           {p.status}
                         </Badge>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Button>
+                        {p.file_url ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100"
+                            aria-label={`Open ${p.title}`}
+                            asChild
+                          >
+                            <a href={p.file_url} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          </Button>
+                        ) : null}
+                        <ProposalDrawer
+                          opportunityId={opp.id}
+                          proposal={p}
+                          trigger={
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100"
+                              aria-label={`Edit ${p.title}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          }
+                        />
                       </div>
                     </div>
                   ))}
@@ -235,10 +260,10 @@ export default function OpportunityOverview() {
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-4">
-              <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-4 dark:border-indigo-900/30 dark:bg-indigo-900/10">
-                <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium mb-1">Origin Lead Record</p>
+              <div className="rounded-lg border border-[#0B7FB3]/15 bg-[#0B7FB3]/8 p-4 dark:border-[#0B7FB3]/25 dark:bg-[#0B7FB3]/10">
+                <p className="text-xs text-[#096892] dark:text-[#4FB8E3] font-medium mb-1">Origin Lead Record</p>
                 <p className="text-sm font-semibold text-foreground mb-3">{opp.title}</p>
-                <Button size="sm" className="w-full h-8 gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-700" asChild>
+                <Button size="sm" className="w-full h-8 gap-1.5 text-xs bg-[#0B7FB3] hover:bg-[#096892]" asChild>
                   <Link href={`/leads/${opp.lead_id}`}>
                     Go to Lead View
                     <ChevronRight className="h-3.5 w-3.5" />

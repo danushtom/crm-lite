@@ -28,6 +28,14 @@ class Role(APIModel):
     user_count: int = Field(description="Active users currently assigned this role.")
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    version: int = Field(
+        default=1,
+        description=(
+            "Monotonic row version. Returned as an ETag; send it back via If-Match. This was "
+            "omitted from the payload while PATCH and DELETE both honoured If-Match, so no "
+            "client could actually supply one."
+        ),
+    )
 
 
 class RoleCreate(StrictAPIModel):
