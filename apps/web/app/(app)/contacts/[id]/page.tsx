@@ -43,6 +43,7 @@ import {
 import { useMemo, useState } from "react";
 import { apiFetch, apiList, apiListAll } from "@/lib/api";
 import { ContactDrawer } from "@/components/contacts/contact-drawer";
+import { AttributionPanel } from "@/components/contacts/attribution-panel";
 import { LogActivityDrawer } from "@/components/activities/log-activity-drawer";
 import { QuickReminderDrawer } from "@/components/tasks/quick-reminder-drawer";
 import { leadCurrency, leadScore, leadStage, leadValue } from "@/lib/leads";
@@ -624,6 +625,18 @@ export default function ContactDetailsPage() {
               </div>
 
               <div className="space-y-6">
+                <Card className={cardShell}>
+                  <CardHeader className="border-b border-border/60 pb-3">
+                    <CardTitle className="text-base font-semibold">How they found us</CardTitle>
+                    <p className="text-xs font-normal text-muted-foreground">
+                      Campaign, creative and the form they submitted
+                    </p>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <AttributionPanel contact={contact} />
+                  </CardContent>
+                </Card>
+
                 <Card className={cardShell}>
                   <CardHeader className="flex flex-row items-center justify-between border-b border-border/60 pb-3">
                     <CardTitle className="text-base font-semibold">Deals & pipeline</CardTitle>

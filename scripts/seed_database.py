@@ -40,7 +40,7 @@ import argparse
 import os
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +56,25 @@ AGENT_EMAIL = "arjun@dracara.dev"
 SDR_EMAIL = "meera@dracara.dev"
 PARTNER_EMAIL = "kabir@dracara.dev"
 ACME_ADMIN_EMAIL = "danush@acme.corp"
+
+
+#: Mirrors app/domain/attribution.derive_lead_source. Duplicated rather than imported because
+#: this script runs standalone against a project URL, with apps/api not on the path -- the same
+#: reason apps/worker/env.py duplicates settings instead of sharing a config module.
+_LINKEDIN_SOURCES = {"linkedin", "li"}
+_REFERRAL_MEDIUMS = {"referral", "partner", "affiliate"}
+
+
+def derive_lead_source(utm_source: str | None, utm_medium: str | None) -> str:
+    source = (utm_source or "").strip().lower()
+    medium = (utm_medium or "").strip().lower()
+    if source in _LINKEDIN_SOURCES:
+        return "linkedin"
+    if medium in _REFERRAL_MEDIUMS:
+        return "referral"
+    if source or medium:
+        return "website"
+    return "other"
 
 
 def load_dotenv_file(path: Path) -> dict[str, str]:
@@ -339,25 +358,47 @@ def main() -> None:
             company_ids.append(inserted["id"])
         print(f"Inserted {len(company_ids)} companies.")
 
+        # Realistic acquisition mix, so the Contacts strip has something to group by. `attr`
+        # is the UTM set exactly as a real click would carry it -- note the deliberate spread
+        # of facebook / fb / instagram for Meta, which is what the platform actually sends
+        # depending on placement, and what lib/attribution.ts collapses back into one channel.
+        # Contacts with attr=None were entered by hand and fall back to their `source` enum.
+        META = "https://dracara.dev/mvp-sprint"
+        LI = "https://dracara.dev/enterprise-build"
+        GADS = "https://dracara.dev/erp-migration"
+
         contacts_spec: list[dict[str, Any]] = [
-            {"ci": 0, "full_name": "Aditi Rao", "role": "VP Engineering", "email": "aditi@nova.example.com", "phone": "+91 90000 10001"},
-            {"ci": 0, "full_name": "Rohit Menon", "role": "Procurement", "email": "rohit@nova.example.com", "phone": "+91 90000 10002"},
-            {"ci": 1, "full_name": "Sandra Baxter", "role": "Analytics Lead", "email": "sandra@riverbank.example.com", "phone": "+91 90000 10003"},
-            {"ci": 2, "full_name": "Vikram Shah", "role": "CTO", "email": "vikram@meridian.example.com", "phone": "+91 90000 10004"},
-            {"ci": 3, "full_name": "Meera Iyer", "role": "Plant Head", "email": "meera@copper.example.com", "phone": "+91 90000 10005"},
-            {"ci": 4, "full_name": "Ananya Das", "role": "COO", "email": "ananya@brightcart.example.com", "phone": "+91 90000 10006"},
-            {"ci": 5, "full_name": "Karthik Nambiar", "role": "Creative Director", "email": "karthik@skyline.example.com", "phone": "+91 90000 10007"},
-            {"ci": 6, "full_name": "Neha Kapoor", "role": "Program Director", "email": "neha@atlas.example.com", "phone": "+91 90000 10008"},
-            {"ci": 7, "full_name": "Arjun Pillai", "role": "Principal", "email": "arjun@pinewood.example.com", "phone": "+91 90000 10009"},
-            {"ci": 8, "full_name": "Divya Krishnan", "role": "CFO", "email": "divya@drift.example.com", "phone": "+91 90000 10010"},
-            {"ci": 9, "full_name": "Imran Qureshi", "role": "Head of Ops", "email": "imran@keystone.example.com", "phone": "+91 90000 10011"},
-            {"ci": 3, "full_name": "Leena Thomas", "role": "PMO", "email": "leena@copper.example.com", "phone": "+91 90000 10012"},
+            {"ci": 0, "full_name": "Aditi Rao", "role": "VP Engineering", "email": "aditi@nova.example.com", "phone": "+91 90000 10001",
+             "attr": {"utm_source": "linkedin", "utm_medium": "cpc", "utm_campaign": "q3-enterprise-build", "utm_content": "case-study-carousel", "landing_page_url": LI}},
+            {"ci": 0, "full_name": "Rohit Menon", "role": "Procurement", "email": "rohit@nova.example.com", "phone": "+91 90000 10002",
+             "attr": None, "source": "cold_call"},
+            {"ci": 1, "full_name": "Sandra Baxter", "role": "Analytics Lead", "email": "sandra@riverbank.example.com", "phone": "+91 90000 10003",
+             "attr": {"utm_source": "facebook", "utm_medium": "cpc", "utm_campaign": "q3-mvp-sprint", "utm_content": "founder-video-a", "landing_page_url": META}},
+            {"ci": 2, "full_name": "Vikram Shah", "role": "CTO", "email": "vikram@meridian.example.com", "phone": "+91 90000 10004",
+             "attr": {"utm_source": "linkedin", "utm_medium": "cpc", "utm_campaign": "q3-enterprise-build", "utm_content": "testimonial-single", "landing_page_url": LI}},
+            {"ci": 3, "full_name": "Meera Iyer", "role": "Plant Head", "email": "meera@copper.example.com", "phone": "+91 90000 10005",
+             "attr": {"utm_source": "google", "utm_medium": "cpc", "utm_campaign": "erp-migration-search", "utm_term": "erp migration consultant", "landing_page_url": GADS}},
+            {"ci": 4, "full_name": "Ananya Das", "role": "COO", "email": "ananya@brightcart.example.com", "phone": "+91 90000 10006",
+             "attr": {"utm_source": "instagram", "utm_medium": "paid_social", "utm_campaign": "q3-mvp-sprint", "utm_content": "reel-b", "landing_page_url": META}},
+            {"ci": 5, "full_name": "Karthik Nambiar", "role": "Creative Director", "email": "karthik@skyline.example.com", "phone": "+91 90000 10007",
+             "attr": {"utm_source": "fb", "utm_medium": "cpc", "utm_campaign": "retargeting-visitors", "utm_content": "static-pricing", "landing_page_url": META}},
+            {"ci": 6, "full_name": "Neha Kapoor", "role": "Program Director", "email": "neha@atlas.example.com", "phone": "+91 90000 10008",
+             "attr": {"utm_source": "clutch", "utm_medium": "referral", "utm_campaign": "directory-listing", "landing_page_url": "https://dracara.dev/"}},
+            {"ci": 7, "full_name": "Arjun Pillai", "role": "Principal", "email": "arjun@pinewood.example.com", "phone": "+91 90000 10009",
+             "attr": None, "source": "referral"},
+            {"ci": 8, "full_name": "Divya Krishnan", "role": "CFO", "email": "divya@drift.example.com", "phone": "+91 90000 10010",
+             "attr": {"utm_source": "google", "utm_medium": "cpc", "utm_campaign": "erp-migration-search", "utm_term": "sap alternative", "landing_page_url": GADS}},
+            {"ci": 9, "full_name": "Imran Qureshi", "role": "Head of Ops", "email": "imran@keystone.example.com", "phone": "+91 90000 10011",
+             "attr": {"utm_source": "linkedin", "utm_medium": "organic", "utm_campaign": None, "landing_page_url": "https://dracara.dev/blog/scaling-delivery"}},
+            {"ci": 3, "full_name": "Leena Thomas", "role": "PMO", "email": "leena@copper.example.com", "phone": "+91 90000 10012",
+             "attr": {"utm_source": "facebook", "utm_medium": "cpc", "utm_campaign": "q3-mvp-sprint", "utm_content": "founder-video-a", "landing_page_url": META}},
         ]
 
         contact_ids: list[str] = []
         for i, cs in enumerate(contacts_spec):
             prev_ci = contacts_spec[i - 1]["ci"] if i else None
             is_primary = prev_ci is None or cs["ci"] != prev_ci
+            attr = cs.get("attr")
             row = {
                 "company_id": company_ids[cs["ci"]],
                 "full_name": cs["full_name"],
@@ -367,7 +408,16 @@ def main() -> None:
                 "linkedin_url": f"https://www.linkedin.com/in/seed-{i}",
                 "avatar_url": f"https://api.dicebear.com/7.x/avataaars/svg?seed={cs['full_name']}",
                 "is_primary": is_primary,
+                # Same derivation the public capture endpoint applies, so seeded and captured
+                # contacts are indistinguishable downstream.
+                "source": cs.get("source")
+                or (derive_lead_source(attr.get("utm_source"), attr.get("utm_medium")) if attr else "other"),
             }
+            if attr:
+                row.update({k: v for k, v in attr.items() if v is not None})
+                row["captured_at"] = (
+                    datetime.now(timezone.utc) - timedelta(days=3 * i + 1)
+                ).isoformat()
             ins = insert_row(client, base, service_key, "contacts", row)
             contact_ids.append(ins["id"])
 

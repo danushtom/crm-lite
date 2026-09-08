@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     companies,
     contacts,
     dashboard,
+    lead_capture,
     leads,
     meetings,
     notifications,
@@ -32,6 +33,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(leads.router)
+api_router.include_router(lead_capture.router)
 api_router.include_router(opportunities.router)
 api_router.include_router(proposals.router)
 api_router.include_router(companies.router)

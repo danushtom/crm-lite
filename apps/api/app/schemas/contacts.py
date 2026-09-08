@@ -53,10 +53,25 @@ class Contact(APIModel):
     phone: str | None = None
     linkedin_url: str | None = None
     avatar_url: str | None = None
-    source: LeadSource | None = None
+    source: LeadSource | None = Field(
+        default=None,
+        description="Coarse channel. Derived from the UTM fields below for captured contacts.",
+    )
     is_primary: bool = False
     ai_call_consent: bool = False
     created_at: datetime | None = None
+
+    # Marketing attribution, exactly as the click carried it. Read-only: these are stamped by
+    # the public capture endpoint and are not part of ContactCreate/ContactUpdate, so nobody
+    # can rewrite where a lead came from after the fact.
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    utm_campaign: str | None = None
+    utm_content: str | None = None
+    utm_term: str | None = None
+    landing_page_url: str | None = None
+    referrer_url: str | None = None
+    captured_at: datetime | None = None
     version: int = Field(
         default=1,
         description="Monotonic row version. Returned as an ETag; send it back via If-Match.",

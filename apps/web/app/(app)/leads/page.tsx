@@ -21,6 +21,7 @@ import { AddLeadDrawer } from "@/components/leads/add-lead-drawer";
 import { AskAiDrawer } from "@/components/ai/ask-ai-drawer";
 import { LeadsGallery } from "@/components/leads/leads-gallery";
 import { TablePagination } from "@/components/shared/table-pagination";
+import { StatsStrip } from "@/components/shared/stats-strip";
 import { compareValues, usePagination, useSort } from "@/lib/use-table-controls";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { cn } from "@dracara/ui";
@@ -64,11 +65,6 @@ function formatCompactCurrency(n: number, currency: string = "USD"): string {
     maximumFractionDigits: 1,
     minimumFractionDigits: 0,
   }).format(n);
-}
-
-function toK(n: number): string {
-  if (n >= 1000) return `$${Math.round(n / 10) / 100}K`;
-  return `$${Math.round(n)}`;
 }
 
 export default function LeadsPage() {
@@ -154,27 +150,32 @@ export default function LeadsPage() {
 
   const summary = useMemo(() => {
     const totalValue = rows.reduce((sum, row) => sum + row.value, 0);
-    const avgScore = rows.length > 0 ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : 0;
     const hotCount = rows.filter((r) => r.score >= 80).length;
-    
-    // Group by source for the mini cards
-    const sourceMap = new Map<string, number>();
+
+    // Value and score per source. The score shown on each tile used to be
+    // `80 + (globalAverage % 15)` -- the same number on all four tiles regardless of source,
+    // which is why every card read "Avg score 85". It is now that source's own average.
+    const bySource = new Map<string, { value: number; scoreTotal: number; count: number }>();
     for (const row of rows) {
-      sourceMap.set(row.source, (sourceMap.get(row.source) ?? 0) + row.value);
+      const entry = bySource.get(row.source) ?? { value: 0, scoreTotal: 0, count: 0 };
+      entry.value += row.value;
+      entry.scoreTotal += row.score;
+      entry.count += 1;
+      bySource.set(row.source, entry);
     }
-    
-    const campaigns: { name: string; value: number; mostEffective?: boolean }[] = Array.from(sourceMap.entries())
-      .map(([name, value]) => ({ name, value }))
+
+    const campaigns = Array.from(bySource.entries())
+      .map(([name, entry]) => ({
+        name,
+        value: entry.value,
+        count: entry.count,
+        avgScore: entry.count > 0 ? Math.round(entry.scoreTotal / entry.count) : 0,
+      }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 4);
 
-    if (campaigns.length > 0) {
-      campaigns[0].mostEffective = true;
-    }
-
     return {
       totalValue,
-      avgScore: Math.round(avgScore),
       hotCount,
       totalLeads: rows.length,
       campaigns,
@@ -246,46 +247,30 @@ export default function LeadsPage() {
           </div>
         </div>
 
-      <Card className="rounded-xl border border-border/70 bg-card shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-        <CardContent className="space-y-4 pt-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-foreground">Total Pipeline Value</p>
-                <Badge className="h-5 rounded-md bg-emerald-100 px-1.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                  {summary.hotCount} Hot Leads
-                </Badge>
-              </div>
-              <p className="mt-2 text-[38px] font-semibold leading-none tracking-tight text-[#0A1128] dark:text-foreground">
-                {formatCompactCurrency(summary.totalValue)}
-                <span className="ml-2 text-sm font-medium text-muted-foreground">across {summary.totalLeads} leads</span>
-              </p>
-            </div>
-          </div>
-
-          {summary.campaigns.length > 0 && (
-            <div className="grid gap-2 md:grid-cols-4">
-              {summary.campaigns.map((campaign) => (
-                <div key={campaign.name} className="rounded-sm border border-border/70 bg-white px-3 pb-2 pt-3 dark:bg-card">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[22px] font-semibold text-[#0A1128] dark:text-foreground">{toK(campaign.value)}</p>
-                    {campaign.mostEffective ? (
-                      <Badge className="h-5 rounded-md bg-emerald-100 px-2 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                        Highest Value
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Avg score <span className="font-semibold text-foreground">{(80 + (summary.avgScore % 15)).toFixed(0)}</span>
-                  </p>
-                  <div className="mt-2 h-1 w-full rounded bg-[#2FA8E8]" />
-                  <p className="mt-2 text-sm font-medium text-foreground">{campaign.name}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <StatsStrip
+        headlineLabel="Total Pipeline Value"
+        headline={formatCompactCurrency(summary.totalValue)}
+        headlineSuffix={`across ${summary.totalLeads} ${summary.totalLeads === 1 ? "lead" : "leads"}`}
+        badge={
+          summary.hotCount > 0
+            ? { text: `${summary.hotCount} Hot Leads`, tone: "positive" }
+            : undefined
+        }
+        emphasisLabel="Highest value"
+        tiles={summary.campaigns.map((campaign, index) => ({
+          label: campaign.name,
+          // The same formatter as the headline: the tiles used a separate toK() helper that
+          // rendered 49.4M as "$49400K", so a card and the total above it disagreed on units.
+          value: formatCompactCurrency(campaign.value),
+          hint: (
+            <>
+              {campaign.count} {campaign.count === 1 ? "lead" : "leads"} · avg score{" "}
+              <span className="font-semibold text-foreground">{campaign.avgScore}</span>
+            </>
+          ),
+          emphasis: index === 0,
+        }))}
+      />
 
       <Card className="rounded-xl border border-border/70 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
         <CardContent className="overflow-x-auto px-3 py-2">

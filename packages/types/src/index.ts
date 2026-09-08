@@ -135,6 +135,22 @@ export interface ContactRow {
   deleted_at?: string | null;
   /** Required before a voice agent may place an outbound AI call to this contact. */
   ai_call_consent: boolean;
+
+  /**
+   * Marketing attribution, exactly as the click carried it. Written only by the public
+   * lead-capture endpoint; not settable through the authenticated contact endpoints, so
+   * nobody can rewrite where a lead came from after the fact. Use `lib/attribution.ts` to
+   * turn these into a channel label rather than reading utm_source directly -- the same Meta
+   * click arrives as facebook / fb / ig / instagram depending on placement.
+   */
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  utm_term?: string | null;
+  landing_page_url?: string | null;
+  referrer_url?: string | null;
+  captured_at?: string | null;
 }
 
 /**

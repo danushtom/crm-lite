@@ -43,7 +43,8 @@ import { StatsStrip } from "@/components/shared/stats-strip";
 import { LogActivityDrawer } from "@/components/activities/log-activity-drawer";
 import { usePagination } from "@/lib/use-table-controls";
 import { cn } from "@dracara/ui";
-import { leadStage } from "@/lib/leads";
+import { leadStage, leadValue } from "@/lib/leads";
+import { channelTone, contactChannel, hasAttribution } from "@/lib/attribution";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
 type CompanyStage = "Won" | "Leads" | "Lost" | "Discovery";
@@ -208,25 +209,55 @@ export default function ContactsPage() {
   };
 
   const summary = useMemo(() => {
-    // Where these contacts came from, from the contacts themselves. These four rows were
-    // hardcoded constants -- the same numbers regardless of the data.
-    const bySource = new Map<string, number>();
-    for (const c of rows) {
-      const key = c.source ? c.source.replace(/_/g, " ") : "unspecified";
-      bySource.set(key, (bySource.get(key) ?? 0) + 1);
+    // Grouped by acquisition channel -- where each contact actually came from. Grouping on the
+    // raw `source` enum put everything in one "unspecified" bucket, because source is optional
+    // and almost never set by hand; grouping on raw utm_source scatters one channel across
+    // four cards, since the same Meta click arrives as facebook / fb / ig / instagram. See
+    // lib/attribution.ts, which mirrors the server-side mapping.
+    const byChannel = new Map<string, { count: number; value: number; campaigns: Set<string> }>();
+    let attributed = 0;
+    let pipelineValue = 0;
+
+    for (const contact of rows) {
+      const channel = contactChannel(contact);
+      if (hasAttribution(contact)) attributed += 1;
+
+      const lead =
+        leads.find((l) => l.primary_contact_id === contact.id) ??
+        leads.find((l) => l.company_id === contact.company_id);
+      // Only count a deal's value once, against the contact actually leading it.
+      const value = lead && lead.primary_contact_id === contact.id ? leadValue(lead) : 0;
+      pipelineValue += value;
+
+      const entry = byChannel.get(channel) ?? { count: 0, value: 0, campaigns: new Set<string>() };
+      entry.count += 1;
+      entry.value += value;
+      if (contact.utm_campaign) entry.campaigns.add(contact.utm_campaign);
+      byChannel.set(channel, entry);
     }
+
     const total = rows.length || 1;
-    const campaigns = [...bySource.entries()]
-      .map(([name, value]) => ({ name, value, pct: Math.round((value / total) * 100) }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 4)
-      .map((c, i) => ({ ...c, mostEffective: i === 0 }));
+    const campaigns = [...byChannel.entries()]
+      .map(([name, entry]) => ({
+        name,
+        count: entry.count,
+        value: entry.value,
+        campaignCount: entry.campaigns.size,
+        pct: Math.round((entry.count / total) * 100),
+      }))
+      // Ordered by the value they brought in, not headcount: the point of the card is which
+      // channel is worth spending more on.
+      .sort((a, b) => b.value - a.value || b.count - a.count)
+      .slice(0, 4);
 
     return {
       total: rows.length,
+      attributed,
+      pipelineValue,
+      companies: new Set(rows.map((c) => c.company_id)).size,
       campaigns,
     };
-  }, [rows]);
+  }, [rows, leads]);
 
   const isFiltered = selectedStage !== "all" || searchQuery !== "";
 
@@ -392,26 +423,38 @@ export default function ContactsPage() {
         </div>
       ) : null}
 
-      {/* The headline here read "Cust. Acquisition Cost -- $462.72 average, -4%". All three
-          numbers were literals. Nothing in the product measures acquisition cost: the
-          marketing_channel_metrics table that would hold spend has no API and no writer, so
-          the figure could not be made real. The tiles beneath it were already a genuine
-          source breakdown, so the headline now describes those. History / Assign Task /
-          Adjust Spend sat alongside and were three more buttons with no handler; none of them
-          has a meaning at page level with no contact selected, so they are gone rather than
-          reimplemented as something they never were. */}
+      {/* This headline read "Cust. Acquisition Cost -- $462.72 average, -4%", all three
+          numbers literals. Nothing measures acquisition cost. What the page can answer
+          truthfully is where these contacts came from, which is the same question one card
+          over from the pipeline value on Leads. */}
       <StatsStrip
         headlineLabel="Contacts"
         headline={String(summary.total)}
-        tiles={summary.campaigns.map((campaign) => ({
+        headlineSuffix={`across ${summary.companies} ${summary.companies === 1 ? "company" : "companies"}`}
+        badge={
+          summary.attributed > 0
+            ? { text: `${summary.attributed} attributed`, tone: "positive" }
+            : undefined
+        }
+        emphasisLabel="Best channel"
+        tiles={summary.campaigns.map((campaign, index) => ({
           label: campaign.name,
-          value: String(campaign.value),
+          value: String(campaign.count),
+          tone: channelTone(campaign.name),
           hint: (
             <>
-              <span className="font-semibold text-foreground">{campaign.pct}%</span> of contacts
+              {campaign.pct}% of contacts
+              {campaign.value > 0 ? <> · {formatCompactCurrency(campaign.value)}</> : null}
+              {campaign.campaignCount > 0 ? (
+                <>
+                  {" "}
+                  · {campaign.campaignCount}{" "}
+                  {campaign.campaignCount === 1 ? "campaign" : "campaigns"}
+                </>
+              ) : null}
             </>
           ),
-          emphasis: campaign.mostEffective,
+          emphasis: index === 0,
         }))}
       />
 

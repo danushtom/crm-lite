@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ApiError, apiFetch } from "@/lib/api";
 import { selectClass } from "@/components/shared/entity-drawer";
+import { CaptureKeysCard } from "@/components/settings/capture-keys-card";
 import { useApiMutation } from "@/lib/use-api-mutation";
 
 type Me = {
@@ -187,6 +188,8 @@ export default function SettingsPage() {
       </Card>
 
       <WorkspaceCard />
+
+      <CaptureKeysCard />
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">

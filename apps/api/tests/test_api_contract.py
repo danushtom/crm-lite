@@ -17,6 +17,12 @@ UNVERSIONED_ALLOWED = {"/", "/health", "/health/live", "/health/ready"}
 #: app/core/webhook_security.py). A logged-in user never calls these directly.
 SIGNATURE_VERIFIED_ALLOWED = {f"{API_V1_PREFIX}/voice-webhooks/platform/events"}
 
+#: The one public write path: a landing page or ad lead form, authenticated by a capture key
+#: in X-Capture-Key rather than a JWT, since the submitter has no account. Only the submission
+#: itself is exempt -- the sibling /lead-capture/keys routes manage credentials and are held to
+#: the normal bearer requirement by the check below.
+KEY_AUTHENTICATED_ALLOWED = {f"{API_V1_PREFIX}/lead-capture"}
+
 
 def test_service_root_advertises_versions(client):
     body = client.get("/").json()
@@ -82,7 +88,11 @@ def test_protected_routes_declare_security(client):
     spec = client.get("/openapi.json").json()
     unsecured = []
     for path, operations in spec["paths"].items():
-        if path in UNVERSIONED_ALLOWED or path in SIGNATURE_VERIFIED_ALLOWED:
+        if (
+            path in UNVERSIONED_ALLOWED
+            or path in SIGNATURE_VERIFIED_ALLOWED
+            or path in KEY_AUTHENTICATED_ALLOWED
+        ):
             continue
         for method, operation in operations.items():
             if method not in {"get", "post", "patch", "put", "delete"}:
@@ -171,3 +181,18 @@ def test_every_list_orders_by_a_unique_tiebreaker():
                 offenders.append(f"{module.name}: {clause}")
 
     assert offenders == [], f"ordering without a unique tiebreaker: {offenders}"
+
+
+def test_lead_capture_key_management_is_still_bearer_authenticated(client):
+    """The exemption above is for the public submission only. Its neighbours hand out and
+    revoke the credentials that submission uses, so an exemption leaking onto them would make
+    the keys themselves world-readable."""
+    spec = client.get("/openapi.json").json()
+    key_routes = [p for p in spec["paths"] if p.startswith(f"{API_V1_PREFIX}/lead-capture/keys")]
+    assert key_routes, "expected the capture-key management routes to be registered"
+
+    for path in key_routes:
+        for method, operation in spec["paths"][path].items():
+            if method not in {"get", "post", "patch", "put", "delete"}:
+                continue
+            assert operation.get("security"), f"{method.upper()} {path} is unsecured"

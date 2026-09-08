@@ -5,7 +5,6 @@ import { Badge, Button, Card, CardContent, Input, Skeleton } from "@dracara/ui";
 import { CompanyDrawer } from "@/components/companies/company-drawer";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ChevronDown,
   ChevronsUpDown,
   LayoutGrid,
   Linkedin,
@@ -14,12 +13,13 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { apiListAll } from "@/lib/api";
 import { leadStage, leadValue } from "@/lib/leads";
 import { CompaniesGallery } from "@/components/companies/companies-gallery";
 import { Avatar } from "@/components/shared/avatar";
 import { TablePagination } from "@/components/shared/table-pagination";
+import { StatsStrip } from "@/components/shared/stats-strip";
 import { compareValues, usePagination, useSort } from "@/lib/use-table-controls";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { cn } from "@dracara/ui";
@@ -34,9 +34,6 @@ const SORTABLE_COLUMNS: { key: CompanySortKey; label: string }[] = [
   { key: "value", label: "Pipeline value" },
   { key: "contactRole", label: "Position" },
 ];
-
-/** Shared with the contacts page so the two stats strips collapse together. */
-const STATS_COLLAPSED_KEY = "crm-stats-collapsed";
 
 type CompanyStage = "Won" | "Leads" | "Lost" | "Discovery";
 
@@ -64,11 +61,6 @@ function formatCompactCurrency(n: number): string {
   }).format(n);
 }
 
-function toK(n: number): string {
-  if (n >= 1000) return `$${Math.round(n / 10) / 100}K`;
-  return `$${Math.round(n)}`;
-}
-
 export default function CompaniesPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -77,28 +69,7 @@ export default function CompaniesPage() {
 
   // Seeded from ?q= so the global search in the top bar lands here with its term applied.
   const [searchQuery, setSearchQuery] = useState(searchParams.get("q") ?? "");
-  const [statsCollapsed, setStatsCollapsed] = useState(false);
   const { sortKey, sortDirection, toggleSort } = useSort<CompanySortKey>("name", "asc");
-
-  useEffect(() => {
-    try {
-      setStatsCollapsed(localStorage.getItem(STATS_COLLAPSED_KEY) === "true");
-    } catch {
-      // Blocked storage: default to expanded.
-    }
-  }, []);
-
-  const toggleStats = () => {
-    setStatsCollapsed((collapsed) => {
-      const next = !collapsed;
-      try {
-        localStorage.setItem(STATS_COLLAPSED_KEY, String(next));
-      } catch {
-        // Non-fatal.
-      }
-      return next;
-    });
-  };
 
   const { data: companies = [], isLoading: companiesLoading, error: companiesError } = useQuery({
     queryKey: ["companies", "list"],
@@ -192,20 +163,28 @@ export default function CompaniesPage() {
     // Real distribution across the companies in view. These four figures used to be
     // generated from a hash of the row count, which made them stable enough to look like
     // data and meant nothing at all.
-    const byIndustry = new Map<string, number>();
+    const byIndustry = new Map<string, { value: number; count: number }>();
     for (const row of rows) {
       const key = row.industry?.trim() || "Unspecified";
-      byIndustry.set(key, (byIndustry.get(key) ?? 0) + row.value);
+      const entry = byIndustry.get(key) ?? { value: 0, count: 0 };
+      entry.value += row.value;
+      entry.count += 1;
+      byIndustry.set(key, entry);
     }
-    const industryTotal = [...byIndustry.values()].reduce((a, b) => a + b, 0) || 1;
+    const industryTotal = [...byIndustry.values()].reduce((sum, e) => sum + e.value, 0) || 1;
     const campaigns = [...byIndustry.entries()]
-      .map(([name, value]) => ({ name, value, pct: Math.round((value / industryTotal) * 100) }))
+      .map(([name, entry]) => ({
+        name,
+        value: entry.value,
+        count: entry.count,
+        pct: Math.round((entry.value / industryTotal) * 100),
+      }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 4)
-      .map((c, i) => ({ ...c, mostEffective: i === 0 }));
+      .slice(0, 4);
 
     return {
       average,
+      total,
       discoveryCount,
       wonCount,
       lostCount,
@@ -268,61 +247,35 @@ export default function CompaniesPage() {
         </div>
       </div>
 
-      <Card className="rounded-xl border border-border/70 bg-card shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-        <CardContent className="space-y-4 pt-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-foreground">Cust. Acquisition Cost</p>
-                <Badge className="h-5 rounded-md bg-rose-100 px-1.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
-                  {Math.max(1, summary.lostCount)}%
-                </Badge>
-              </div>
-              <p className="mt-2 text-[38px] font-semibold leading-none tracking-tight text-[#0A1128] dark:text-foreground">
-                {formatCompactCurrency(summary.average)}
-                <span className="ml-1 text-xs font-medium text-muted-foreground">average</span>
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleStats}
-                aria-expanded={!statsCollapsed}
-                className="h-8 gap-1 rounded-md border-border/70 px-3 text-xs font-semibold"
-              >
-                {statsCollapsed ? "Expand" : "Collapse"}
-                <ChevronDown
-                  className={cn(
-                    "h-3.5 w-3.5 text-muted-foreground transition-transform",
-                    statsCollapsed && "rotate-180"
-                  )}
-                />
-              </Button>
-            </div>
-          </div>
-
-          <div className={cn("grid gap-2 md:grid-cols-4", statsCollapsed && "hidden")}>
-            {summary.campaigns.map((campaign) => (
-              <div key={campaign.name} className="rounded-sm border border-border/70 bg-white px-3 pb-2 pt-3 dark:bg-card">
-                <div className="flex items-center justify-between">
-                  <p className="text-[22px] font-semibold text-[#0A1128] dark:text-foreground">{toK(campaign.value)}</p>
-                  {campaign.mostEffective ? (
-                    <Badge className="h-5 rounded-md bg-emerald-100 px-2 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                      Most Effective
-                    </Badge>
-                  ) : null}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Bring <span className="font-semibold text-foreground">{campaign.pct}%</span> new cust
-                </p>
-                <div className="mt-2 h-1 w-full rounded bg-[#2FA8E8]" />
-                <p className="mt-2 text-sm font-medium text-foreground">{campaign.name}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      {/* This was labelled "Cust. Acquisition Cost" over summary.average, which is the mean
+          pipeline value per company -- not an acquisition cost, which nothing here measures.
+          The rose badge beside it rendered the count of lost companies as a percentage,
+          floored at 1 so it was never zero. Same component and same shape as Leads and
+          Contacts now. */}
+      <StatsStrip
+        headlineLabel="Total pipeline value"
+        headline={formatCompactCurrency(summary.total)}
+        headlineSuffix={`across ${summary.totalCompanies} ${summary.totalCompanies === 1 ? "company" : "companies"}`}
+        badge={
+          summary.wonCount > 0
+            ? { text: `${summary.wonCount} won`, tone: "positive" }
+            : summary.lostCount > 0
+              ? { text: `${summary.lostCount} lost`, tone: "negative" }
+              : undefined
+        }
+        emphasisLabel="Highest value"
+        tiles={summary.campaigns.map((campaign, index) => ({
+          label: campaign.name,
+          value: formatCompactCurrency(campaign.value),
+          hint: (
+            <>
+              {campaign.count} {campaign.count === 1 ? "company" : "companies"} · {campaign.pct}%
+              of pipeline
+            </>
+          ),
+          emphasis: index === 0,
+        }))}
+      />
 
       <Card className="rounded-xl border border-border/70 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
         <CardContent className="overflow-x-auto px-3 py-2">

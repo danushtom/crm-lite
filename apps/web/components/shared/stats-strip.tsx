@@ -14,6 +14,12 @@ export type StatTile = {
   hint?: ReactNode;
   /** Highlights the leading tile. */
   emphasis?: boolean;
+  /**
+   * Bar colour for this tile, as a bg-* class. Pass it where the tile means something with its
+   * own identity -- an acquisition channel, say, which should read the same colour on every
+   * page. Omit it and tiles fall back to position-based colours.
+   */
+  tone?: string;
 };
 
 /** Bar colours for the tile row, in order. */
@@ -27,13 +33,19 @@ const BAR_COLORS = ["bg-[#18395B]", "bg-[#2FA8E8]", "bg-[#45B2F0]", "bg-[#E2E8F0
  */
 export function StatsStrip({
   headline,
+  headlineSuffix,
   headlineLabel,
   badge,
+  emphasisLabel = "Most effective",
   tiles,
 }: {
   headline: string;
+  /** Smaller text after the headline, e.g. "across 14 leads". */
+  headlineSuffix?: string;
   headlineLabel?: string;
   badge?: { text: string; tone: "positive" | "negative" };
+  /** Badge shown on the emphasised tile -- "Highest value", "Largest group". */
+  emphasisLabel?: string;
   tiles: StatTile[];
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -82,6 +94,11 @@ export function StatsStrip({
             </div>
             <p className="mt-2 text-[38px] font-semibold leading-none tracking-tight text-[#0A1128] dark:text-foreground">
               {headline}
+              {headlineSuffix ? (
+                <span className="ml-2 text-sm font-medium text-muted-foreground">
+                  {headlineSuffix}
+                </span>
+              ) : null}
             </p>
           </div>
 
@@ -102,7 +119,7 @@ export function StatsStrip({
           </Button>
         </div>
 
-        {collapsed ? null : (
+        {collapsed || tiles.length === 0 ? null : (
           <div className="grid gap-2 md:grid-cols-4">
             {tiles.map((tile, index) => (
               <div
@@ -115,7 +132,7 @@ export function StatsStrip({
                   </p>
                   {tile.emphasis ? (
                     <Badge className="h-5 rounded-md bg-emerald-100 px-2 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                      Most effective
+                      {emphasisLabel}
                     </Badge>
                   ) : null}
                 </div>
@@ -125,14 +142,14 @@ export function StatsStrip({
                 <div
                   className={cn(
                     "mt-2 h-1 w-full rounded",
-                    BAR_COLORS[index % BAR_COLORS.length]
+                    tile.tone ?? BAR_COLORS[index % BAR_COLORS.length]
                   )}
                 />
                 <p className="mt-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
                   <span
                     className={cn(
                       "inline-block h-2 w-2 rounded-sm",
-                      BAR_COLORS[index % BAR_COLORS.length]
+                      tile.tone ?? BAR_COLORS[index % BAR_COLORS.length]
                     )}
                   />
                   {tile.label}
