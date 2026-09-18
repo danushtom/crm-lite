@@ -21,6 +21,7 @@ const TITLE_MAP: { prefix: string; title: string }[] = [
   { prefix: "/reports", title: "Reports" },
   { prefix: "/settings", title: "Settings" },
   { prefix: "/import", title: "Import" },
+  { prefix: "/recently-deleted", title: "Recently deleted" },
   { prefix: "/leads", title: "Leads" },
 ];
 

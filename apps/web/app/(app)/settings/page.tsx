@@ -15,6 +15,7 @@ import {
 } from "@dracara/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, CircleAlert, Link2, Loader2, Unlink } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ApiError, apiFetch } from "@/lib/api";
@@ -180,6 +181,18 @@ export default function SettingsPage() {
       <WorkspaceCard />
 
       <BillingSummaryCard />
+
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base">Recently deleted</CardTitle>
+            <CardDescription>Restore leads, opportunities, contacts and companies that were deleted.</CardDescription>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/recently-deleted">Open</Link>
+          </Button>
+        </CardHeader>
+      </Card>
 
       <CaptureKeysCard />
 

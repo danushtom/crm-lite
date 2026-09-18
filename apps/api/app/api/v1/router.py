@@ -28,6 +28,7 @@ from app.api.v1.endpoints import (
     opportunities,
     organizations,
     proposals,
+    recently_deleted,
     roles,
     tasks,
     voice_agents,
@@ -55,6 +56,7 @@ api_router.include_router(contacts.router, dependencies=_writable)
 api_router.include_router(tasks.router, dependencies=_writable)
 api_router.include_router(meetings.router, dependencies=_writable)
 api_router.include_router(imports.router, dependencies=_writable)
+api_router.include_router(recently_deleted.router, dependencies=_writable)
 api_router.include_router(notifications.router)
 api_router.include_router(roles.router, dependencies=_writable)
 api_router.include_router(agents.router, dependencies=_writable)

@@ -113,7 +113,7 @@ export function ContactDrawer({ contact }: { contact?: ContactRow }) {
       }),
     onSuccess: () => {
       invalidate();
-      toast.success("Contact deleted", { description: "Their history is kept." });
+      toast.success("Contact deleted", { description: "Restore it from Settings → Recently deleted." });
       setOpen(false);
     },
   });

@@ -130,7 +130,7 @@ export function OpportunityDrawer({
       }),
     onSuccess: () => {
       invalidate();
-      toast.success("Opportunity deleted");
+      toast.success("Opportunity deleted", { description: "Restore it from Settings → Recently deleted." });
       setOpen(false);
     },
   });

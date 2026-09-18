@@ -1868,6 +1868,10 @@ Companies, contacts and leads can be imported from a CSV file at /import (and fr
 Imports run as the caller under RLS, so an import can create only what its user could create by hand, and non-admins own everything they import (an owner column is honoured only for full-access users). Companies are matched by website domain then case-insensitive name, contacts by email (or by name within the company), and leads by company plus primary contact, so re-running a file creates nothing new. Validation happens before anything is written. Each table then gets one bulk insert, which falls back to row-by-row inserts when it fails, so one bad row never loses the rest of the batch. Ambiguous dates (03/04/2026) are refused rather than guessed. Every row gets a result, and failed rows can be downloaded as a CSV with the reason added, ready to fix and re-import. Imports are write operations, so the plan gate applies.
 
 
+23.10 Recently deleted
+Soft deletes (23.1) were recoverable in principle only: every SELECT policy hides deleted rows, so undoing one meant editing the database. Settings -> Recently deleted now lists deleted leads, opportunities, contacts and companies and restores them. Both operations go through SECURITY DEFINER functions (recently_deleted, restore_record), for the same reason the soft_delete_* functions do. Both apply one shared rule, may_manage_deleted(), which mirrors each delete function's own check: you can see and restore what you could have deleted. A child under a deleted parent is listed as blocked, and restoring it is refused with a pointer to the parent. Restoring an opportunity that would give its lead a second active pursuit is refused. A trigger now records deleted_by on the four tables.
+
+
 23.5 What in this document is now stale
 Section
 Why it's stale

@@ -24,6 +24,7 @@ For the full business and technical design record, including everything shipped 
 | Billing — per-seat plans on Dodo Payments, 14-day no-card trial, read-only after it lapses | Shipped |
 | Self-serve signup, password reset, and invite acceptance (set-password) flows | Shipped |
 | CSV import of companies, contacts and leads — column auto-mapping, de-duplication, per-row results | Shipped |
+| Recently deleted — list and restore soft-deleted leads, opportunities, contacts and companies | Shipped |
 | Company research — cited profile, news and tech signals from the public web, with reviewable suggested edits | Shipped |
 | Pre-call brief — who they are, why now, talking points and questions, from CRM facts plus research | Shipped |
 | ML-based lead scoring | Not built — scoring is a weighted formula (`packages/scoring`) |

@@ -102,7 +102,7 @@ export function CompanyDrawer({ company }: { company?: CompanyRow }) {
       }),
     onSuccess: () => {
       invalidate();
-      toast.success("Company deleted", { description: "It can be restored if needed." });
+      toast.success("Company deleted", { description: "Restore it from Settings → Recently deleted." });
       setOpen(false);
     },
   });
