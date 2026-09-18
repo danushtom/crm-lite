@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { ProposalDrawer } from "@/components/opportunities/proposal-drawer";
+import { DraftWithAiButton } from "@/components/opportunities/draft-with-ai-button";
 import { FileText, Plus, ExternalLink, Download } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -49,7 +50,10 @@ export default function ProposalsPage() {
           <h2 className="text-2xl font-semibold tracking-tight">Proposals</h2>
           <p className="mt-1 text-sm text-muted-foreground">Version history and commercial documents sent to the client.</p>
         </div>
-        <ProposalDrawer opportunityId={id} />
+        <div className="flex items-center gap-2">
+          <DraftWithAiButton opportunityId={id} />
+          <ProposalDrawer opportunityId={id} />
+        </div>
       </div>
 
       <div className="grid gap-4">

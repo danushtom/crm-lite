@@ -15,7 +15,6 @@ import { AddLeadDrawer } from "@/components/leads/add-lead-drawer";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useState } from "react";
 import { AskAiDrawer } from "@/components/ai/ask-ai-drawer";
-import { useQueryClient } from "@tanstack/react-query";
 
 export type OpportunitiesViewMode = "list" | "kanban" | "timeline";
 
@@ -29,7 +28,6 @@ export function OpportunitiesToolbar({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const queryClient = useQueryClient();
   const [showAi, setShowAi] = useState(false);
   
   const setView = onViewModeChange ?? ((v: OpportunitiesViewMode) => {
@@ -40,11 +38,7 @@ export function OpportunitiesToolbar({
 
   return (
     <>
-      <AskAiDrawer 
-        open={showAi} 
-        onOpenChange={setShowAi} 
-        contextData={queryClient.getQueryData(["opportunities", "pipeline"])} 
-      />
+      <AskAiDrawer open={showAi} onOpenChange={setShowAi} />
       <div className="flex flex-col gap-3 border-b border-[#E5E7EB] pb-3 dark:border-border sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           {/* Work enters the pipeline as a lead; creating one opens its first pursuit. */}

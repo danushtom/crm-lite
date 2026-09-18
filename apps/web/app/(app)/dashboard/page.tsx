@@ -21,6 +21,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch, apiListAll } from "@/lib/api";
 import { DashboardCalendarWidget, type DashboardMeeting } from "@/components/dashboard/dashboard-calendar-widget";
+import { DealsAtRisk } from "@/components/dashboard/deals-at-risk";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { humanizeEnum } from "@/lib/forms";
 import { leadStage } from "@/lib/leads";
@@ -210,6 +211,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5">
+      {/* Above the KPI row on purpose: this is the only thing on the dashboard that asks the
+          reader to do something today. It renders nothing when nothing is at risk. */}
+      <DealsAtRisk />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <KpiCard
           label="Leads"

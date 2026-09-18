@@ -8,6 +8,10 @@ httpx>=0.28.1
 python-multipart>=0.0.20
 cryptography>=44.0.0
 slowapi>=0.1.9
+# Shared rate-limit storage (RATE_LIMIT_STORAGE_URI=redis://...), so limits hold across replicas.
+redis>=5.2.0
+# Error monitoring; inert unless SENTRY_DSN is set.
+sentry-sdk[fastapi]>=2.19.0
 # IANA timezone database. Windows ships none, and slim container images often omit it,
 # so zoneinfo cannot resolve 'Asia/Kolkata' without this.
 tzdata>=2024.2
@@ -15,6 +19,14 @@ tzdata>=2024.2
 # Shared scoring model, installed from the workspace so the API and the worker
 # run the identical implementation rather than two copies that can drift.
 -e ../../packages/scoring
+
+# Plan catalog and entitlements, shared with the worker so both enforce the same plans.
+-e ../../packages/billing
+
+# Shared AI layer (OpenAI client, embeddings, Qdrant, LangGraph workflows), installed from the
+# workspace for the same reason: a prompt that exists in two copies drifts silently.
+# Brings openai, langgraph, langchain-core, qdrant-client, pypdf and python-docx with it.
+-e ../../packages/ai
 
 # Testing
 pytest>=8.3.4

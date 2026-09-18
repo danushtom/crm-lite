@@ -13,15 +13,26 @@ from app.core.config import API_V1_PREFIX
 UNVERSIONED_ALLOWED = {"/", "/health", "/health/live", "/health/ready"}
 
 #: Versioned routes deliberately authenticated by something other than a Supabase bearer
-#: token -- the voice platform's webhook callbacks, verified by HMAC signature instead (see
+#: token -- webhook callbacks from the voice platform and the billing provider, verified by
+#: signature instead (see
 #: app/core/webhook_security.py). A logged-in user never calls these directly.
-SIGNATURE_VERIFIED_ALLOWED = {f"{API_V1_PREFIX}/voice-webhooks/platform/events"}
+SIGNATURE_VERIFIED_ALLOWED = {
+    f"{API_V1_PREFIX}/voice-webhooks/platform/events",
+    # Dodo Payments subscription events, verified by Standard Webhooks signature.
+    f"{API_V1_PREFIX}/billing-webhooks/dodo",
+}
 
 #: The one public write path: a landing page or ad lead form, authenticated by a capture key
 #: in X-Capture-Key rather than a JWT, since the submitter has no account. Only the submission
 #: itself is exempt -- the sibling /lead-capture/keys routes manage credentials and are held to
 #: the normal bearer requirement by the check below.
 KEY_AUTHENTICATED_ALLOWED = {f"{API_V1_PREFIX}/lead-capture"}
+
+#: Routes that legitimately answer with something other than `application/json`. The assistant
+#: streams its reply as server-sent events, so a JSON success schema would be a lie rather than a
+#: contract -- it declares a `text/event-stream` schema instead. Everything else about these
+#: routes (versioning, summary, bearer security) is still enforced below.
+STREAMING_ALLOWED = {f"{API_V1_PREFIX}/ai/chat"}
 
 
 def test_service_root_advertises_versions(client):
@@ -75,6 +86,9 @@ def test_every_operation_declares_a_summary_and_success_schema(client):
             if success == ["204"]:
                 continue
             content = operation["responses"][success[0]].get("content", {})
+            if path in STREAMING_ALLOWED:
+                assert "text/event-stream" in content, f"{label} must declare its stream schema"
+                continue
             schema = content.get("application/json", {}).get("schema")
             if not schema:
                 missing_schema.append(label)

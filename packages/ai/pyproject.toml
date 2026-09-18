@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dracara-ai"
+version = "1.0.0"
+description = "LLM client, embeddings, vector store and LangGraph workflows, shared by the API and the Celery worker."
+requires-python = ">=3.12"
+dependencies = [
+  "openai>=1.59.0",
+  "langgraph>=0.2.60",
+  "langchain-core>=0.3.28",
+  "qdrant-client>=1.12.1",
+  "pydantic>=2.10.5",
+  "pydantic-settings>=2.7.0",
+  "pypdf>=5.1.0",
+  "python-docx>=1.1.2",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

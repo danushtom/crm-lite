@@ -2,6 +2,12 @@
 
 Kept in its own module so routers can import it without a circular dependency on ``app.main``.
 
+**Client address.** Behind a load balancer the socket peer is the proxy, so every anonymous
+caller would share one bucket. uvicorn's ``--proxy-headers`` (with ``FORWARDED_ALLOW_IPS``
+naming the trusted proxies -- see the Dockerfile) rewrites the client address from
+``X-Forwarded-For`` before this module sees it; it is deliberately not parsed here, where a
+spoofed header could not be told apart from a real one.
+
 **Keying.** Requests are bucketed per access token rather than per client IP -- otherwise every
 user behind one NAT or corporate proxy shares a single quota. The token is hashed rather than
 used directly so credentials never reach the limiter's storage or any log line.
@@ -48,6 +54,10 @@ limiter = Limiter(
     default_limits=[settings.rate_limit_default] if settings.rate_limit_enabled else [],
     enabled=settings.rate_limit_enabled,
     headers_enabled=True,
+    storage_uri=settings.rate_limit_storage_uri,
+    # If shared storage (Redis) is unreachable, fall back to per-process counting rather than
+    # failing every request: a degraded limit beats an outage.
+    in_memory_fallback_enabled=True,
 )
 
 # This slowapi build has no `default_limits_exempt_when`, so probe routes opt out

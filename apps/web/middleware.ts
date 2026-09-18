@@ -1,5 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeNext } from "@/lib/auth";
+
+/** Reachable without a session. /auth/confirm must be: it is what creates the session. */
+const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/auth/confirm"];
+/** A signed-in user visiting these is sent on to the app instead. */
+const SIGNED_OUT_ONLY = ["/login", "/signup", "/forgot-password"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -36,30 +42,23 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLogin = request.nextUrl.pathname.startsWith("/login");
-  const isAuthRoute =
-    request.nextUrl.pathname.startsWith("/dashboard") ||
-    request.nextUrl.pathname.startsWith("/opportunities") ||
-    request.nextUrl.pathname.startsWith("/pipeline") ||
-    request.nextUrl.pathname.startsWith("/companies") ||
-    request.nextUrl.pathname.startsWith("/contacts") ||
-    request.nextUrl.pathname.startsWith("/leads") ||
-    request.nextUrl.pathname.startsWith("/follow-ups") ||
-    request.nextUrl.pathname.startsWith("/calendar") ||
-    request.nextUrl.pathname.startsWith("/opportunities") ||
-    request.nextUrl.pathname.startsWith("/agents") ||
-    request.nextUrl.pathname.startsWith("/reports") ||
-    request.nextUrl.pathname.startsWith("/settings");
+  const path = request.nextUrl.pathname;
+  // Everything is signed-in only except these. An allow-list of public paths (rather than a
+  // list of protected ones) means a new page is protected by default -- the old protected list
+  // had already missed /voice-agents.
+  const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + "/"));
+  const isSignedOutOnly = SIGNED_OUT_ONLY.some((p) => path === p || path.startsWith(p + "/"));
 
-  if (!user && isAuthRoute) {
+  if (!user && !isPublic) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
-    redirectUrl.searchParams.set("next", request.nextUrl.pathname);
+    redirectUrl.search = "";
+    redirectUrl.searchParams.set("next", path + request.nextUrl.search);
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && isLogin) {
-    const next = request.nextUrl.searchParams.get("next") || "/dashboard";
+  if (user && isSignedOutOnly) {
+    const next = safeNext(request.nextUrl.searchParams.get("next"));
     return NextResponse.redirect(new URL(next, request.url));
   }
 

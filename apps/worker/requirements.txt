@@ -1,5 +1,7 @@
 celery[redis]>=5.4.0
 redis>=5.2.0
+# Error monitoring; inert unless SENTRY_DSN is set.
+sentry-sdk[celery]>=2.19.0
 httpx>=0.28.1
 pydantic-settings>=2.7.0
 google-api-python-client>=2.159.0
@@ -10,6 +12,12 @@ google-auth-httplib2>=0.2.0
 # Shared scoring model, installed from the workspace so the API and the worker
 # run the identical implementation rather than two copies that can drift.
 -e ../../packages/scoring
+
+# Plan catalog and entitlements -- AI jobs skip organizations whose plan lacks the feature.
+-e ../../packages/billing
+
+# Shared AI layer -- the worker runs the call-notes and deal-health graphs from here.
+-e ../../packages/ai
 
 # Testing
 pytest>=8.3.4

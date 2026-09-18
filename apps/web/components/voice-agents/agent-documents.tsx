@@ -109,6 +109,7 @@ export function AgentDocuments({ voiceAgentId }: { voiceAgentId: string }) {
               >
                 {doc.filename}
               </a>
+              <IndexBadge doc={doc} />
               <span className="shrink-0 text-[11px] text-muted-foreground">
                 {formatDate(doc.created_at)}
               </span>
@@ -128,5 +129,40 @@ export function AgentDocuments({ voiceAgentId }: { voiceAgentId: string }) {
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * Whether the agent can actually quote from this document.
+ *
+ * Worth surfacing because an upload deliberately succeeds even when indexing fails: without this
+ * an admin uploads a pricing sheet, sees it listed, and reasonably assumes the agent knows the
+ * prices. Before this feature existed that assumption was wrong for *every* document.
+ */
+function IndexBadge({ doc }: { doc: VoiceAgentDocument }) {
+  if (doc.index_error) {
+    return (
+      <span
+        title={doc.index_error}
+        className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive"
+      >
+        Not searchable
+      </span>
+    );
+  }
+  if (!doc.indexed_at) {
+    return (
+      <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+        Indexing…
+      </span>
+    );
+  }
+  return (
+    <span
+      title={`${doc.chunk_count ?? 0} passages the agent can cite`}
+      className="shrink-0 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+    >
+      Searchable
+    </span>
   );
 }

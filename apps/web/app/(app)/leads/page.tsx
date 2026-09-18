@@ -184,7 +184,7 @@ export default function LeadsPage() {
 
   return (
     <>
-      <AskAiDrawer open={showAi} onOpenChange={setShowAi} contextData={{ summary, rows }} />
+      <AskAiDrawer open={showAi} onOpenChange={setShowAi} />
       <div className="-mt-1 space-y-3">
         <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2">

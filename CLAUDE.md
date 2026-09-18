@@ -4,11 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Dracara Growth OS: a multi-tenant deal-flow CRM for software services agencies (lead pipeline, opportunities, proposals, follow-ups, AI voice calling). Turborepo monorepo: `apps/web` (Next.js 15), `apps/api` (FastAPI), `apps/worker` (Celery), `packages/types`, `packages/ui`, `packages/scoring`, backed by Supabase (Postgres + RLS + Auth + Storage). See `README.md` for the feature/tech overview, `SETUP.md` for full environment setup, and `tdd.md` for the complete design record (§23 is a changelog of everything shipped since the original v1.0 scope — read it before trusting anything else in that document, since several earlier sections are now stale and §23.5 lists which ones).
+Dracara Growth OS: a multi-tenant deal-flow CRM for software services agencies (lead pipeline, opportunities, proposals, follow-ups, AI voice calling). Turborepo monorepo: `apps/web` (Next.js 15), `apps/api` (FastAPI), `apps/worker` (Celery), `packages/types`, `packages/ui`, `packages/scoring`, `packages/billing`, `packages/ai`, backed by Supabase (Postgres + RLS + Auth + Storage). See `README.md` for the feature/tech overview, `SETUP.md` for full environment setup, and `tdd.md` for the complete design record (§23 is a changelog of everything shipped since the original v1.0 scope — read it before trusting anything else in that document, since several earlier sections are now stale and §23.5 lists which ones).
 
 ## Commands
 
 ```bash
+# Local infrastructure (Qdrant, for the AI knowledge base). Supabase is separate.
+docker compose up -d qdrant
+
 # Everything, from repo root (requires apps/api/.venv and apps/worker/.venv to already exist)
 pnpm install
 pnpm dev              # turbo dev: web + api + worker together
@@ -32,6 +35,9 @@ pnpm --filter web lint
 .venv\Scripts\celery -A worker_app worker --loglevel=info -P solo   # Windows: worker only
 .venv\Scripts\celery -A worker_app beat --loglevel=info             # Windows: scheduler needs its own process
 .venv/bin/celery -A worker_app worker -B --loglevel=info            # macOS/Linux: both together
+
+# Shared AI package (installed into both venvs via -e; run its tests from either)
+apps/api/.venv/Scripts/python -m pytest packages/ai/tests -q
 
 # Database migrations
 supabase db push --dry-run    # review before applying
@@ -66,6 +72,22 @@ Outbound calling has two independent gates before a call is placed: a per-contac
 
 A single-segment wildcard route (`/{resource_id}`) registered before a literal-path route (`/resource/special-path`) will swallow it — FastAPI matches in declaration order. Literal sibling paths (`/phone-numbers`, `/calls`) must be declared before the `/{id}` CRUD routes in the same router file; this has already caused one real bug in `voice_agents.py`.
 
+### AI: one shared package, pure graphs, and a vector store with no RLS
+
+Every model call in the product lives in `packages/ai` (`dracara_ai`), installed from the workspace into both `apps/api` and `apps/worker` — same reasoning as `packages/scoring`: a prompt that exists in two copies drifts silently. LangGraph is the orchestration primitive; OpenAI is the provider; prompts all live in `prompts.py`.
+
+**Graphs are pure.** A graph takes plain data in and returns a Pydantic model out — no database handle, no `organization_id`, no writes. Tenant scoping and all DB I/O stay in the caller (an API service, or a worker task in `apps/worker/ai_jobs.py`). The one exception, `graphs/assistant.py`, still holds no DB client: it receives already-bound reader callables as tools.
+
+**`vector_store.py` is the one place in this codebase where a forgotten tenant filter fails *open*.** Postgres RLS is a backstop everywhere else; Qdrant has none, so a missing filter returns results — just another organization's. `organization_id` is therefore a required keyword-only argument on every read and delete there, applied inside the module rather than by callers, and there is deliberately no unfiltered variant. Do not add one. `search_knowledge_base` in `voice_tools.py` takes the agent id from the resolved `calls` row, never from the model's tool-call arguments — the same trust boundary as every other voice tool.
+
+The assistant's tools (`app/services/ai/assistant_tools.py`) bind to the **caller's RLS-scoped `DbDep` client, never `AdminDbDep`**. That is the entire security argument for the feature: the model cannot read a row the user could not already open, and there is no org id in that module to get wrong. Swapping in the admin client would silently undo it.
+
+`ai_usage` attributes every call to an organization and `AI_MONTHLY_TOKEN_BUDGET` caps it — one API key serves every tenant.
+
+**Web research (`search.py`, `graphs/research.py`) is where the product meets the open web.** Outbound, only a company's name and domain may reach Exa — `company_queries()` takes exactly those two strings so there is no channel for CRM content; never add one. Inbound, page text is untrusted: the research graph has no tools and writes nothing, `verify_citations()` drops any claim whose citation is not a source actually retrieved, and enums/URLs are validated in code. Research returns *suggestions*; applying one is an ordinary `PATCH /companies/{id}` with `If-Match`. The API reads the company or lead through `DbDep` *before* searching, so an invisible record is a 404 and its name never leaves the product.
+
+slowapi's `@limiter.limit` on a route that returns a model (not a `Response`) needs a `response: Response` parameter, or every *successful* call raises after the work is done. This bit `draft_proposal` once.
+
 ### Worker: service-role, tenant-scoping is manual
 
 `apps/worker` has no per-request user token — it always acts with the service role and is responsible for its own tenant scoping. Most scheduled jobs (`apps/worker/worker_app.py`) scan across every organization in one query and rely on the row's own `organization_id`/`owner_id` to route the resulting notification correctly, rather than filtering the query itself (`overdue_escalation` groups admins by `organization_id` in Python after fetching them, for example). `packages/scoring` exists specifically so the API and the worker never run two independent copies of the opportunity-scoring formula that can silently drift — both install it from the workspace rather than vendoring their own copy.
@@ -74,6 +96,10 @@ A single-segment wildcard route (`/{resource_id}`) registered before a literal-p
 
 Every create/edit form is a slide-in panel built on `EntityDrawer` (`apps/web/components/shared/entity-drawer.tsx`), not a separate page or a modal. All backend calls go through `apps/web/lib/api.ts` (`apiFetch`/`apiList`/`apiPage`/`apiListAll`) rather than a raw `fetch` — this is where the Supabase access token gets attached and where `ApiError` (carrying the backend's RFC 9457 Problem Details fields) gets thrown. See `apps/web/README.md` for the full convention.
 
+### Billing is a commercial gate, not a security boundary
+
+Plans and `entitlements()` live in `packages/billing` (shared by the API and worker, same reasoning as `packages/scoring`). Subscription state is `organization_subscriptions`, which has a member SELECT policy and **no write policies** — only the service role (the Dodo webhook, checkout) writes it; never move plan/status onto a table an admin can update. Writes on the CRM routers go through `plan_gate()` (attached per router in `app/api/v1/router.py`); reads are never gated. A missing subscription row fails open, deliberately. The Dodo webhook resolves the organization from the customer id the API stored, never from payload metadata.
+
 ### Testing patterns worth reusing
 
-`apps/api/tests/conftest.py`'s `FakeDb` fakes the PostgREST client by keying responses on `"{METHOD} {table}"} (ignoring query params), and `authed_client` overrides both `get_db` and `get_admin_db` with the same fake instance. For mocking an outbound HTTP call (an external API, not Supabase), monkeypatch the relevant module's `get_http_client` to a small fake object recording calls — see `tests/test_auth_endpoints.py` or `tests/test_voice_platform.py` for the pattern.
+`apps/api/tests/conftest.py`'s `FakeDb` fakes the PostgREST client by keying responses on `"{METHOD} {table}"} (ignoring query params), and `authed_client` overrides both `get_db` and `get_admin_db` with the same fake instance. Because `FakeDb` ignores query params, a filter on a dropped or moved column passes every unit test and fails only against Postgres (this shipped twice: `users.role`, `leads.stage`). `tests/test_schema_drift.py` checks every literal PostgREST filter in the API and worker against the columns the migrations define — if it flags something, the query is wrong, not the test. For mocking an outbound HTTP call (an external API, not Supabase), monkeypatch the relevant module's `get_http_client` to a small fake object recording calls — see `tests/test_auth_endpoints.py` or `tests/test_voice_platform.py` for the pattern.

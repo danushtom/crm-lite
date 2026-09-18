@@ -77,6 +77,7 @@ class TimestampedModel(APIModel):
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {"model": ErrorResponse, "description": "Malformed request"},
     401: {"model": ErrorResponse, "description": "Missing or invalid access token"},
+    402: {"model": ErrorResponse, "description": "The organization's plan does not cover this"},
     403: {"model": ErrorResponse, "description": "Authenticated but not permitted"},
     404: {"model": ErrorResponse, "description": "Resource does not exist or is not visible"},
     409: {"model": ErrorResponse, "description": "Conflicts with current state"},

@@ -116,6 +116,15 @@ class ServiceUnavailableError(APIError):
     title = "Service Unavailable"
 
 
+class PaymentRequiredError(APIError):
+    """The organization's plan does not cover this: trial over, subscription lapsed, a feature
+    outside its tier, or no seat left. ``code`` says which, so the UI can route to billing."""
+
+    status_code = status.HTTP_402_PAYMENT_REQUIRED
+    code = "payment_required"
+    title = "Payment Required"
+
+
 class NotConfiguredError(APIError):
     """A dependency this endpoint needs has not been configured on the server."""
 
@@ -127,6 +136,7 @@ class NotConfiguredError(APIError):
 _TITLE_BY_STATUS = {
     400: "Bad Request",
     401: "Unauthorized",
+    402: "Payment Required",
     403: "Forbidden",
     404: "Not Found",
     405: "Method Not Allowed",

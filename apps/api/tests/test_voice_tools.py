@@ -101,3 +101,118 @@ async def test_book_appointment_without_a_lead_requires_a_valid_org_member_as_ow
 async def test_unknown_tool_name_is_reported_not_raised(fake_db: FakeDb):
     result = await voice_tools.dispatch("delete_everything", ORG_ID, {}, fake_db)
     assert "error" in result
+
+
+# --- search_knowledge_base ------------------------------------------------------------
+#
+# The knowledge-base tool is the one that reaches a store with no row-level security behind it,
+# so it has one extra obligation the others do not: neither scoping argument may originate from
+# the model's tool-call arguments. org_id comes from the webhook's resolved call; voice_agent_id
+# is read back off the `calls` row here.
+
+
+@pytest.mark.asyncio
+async def test_search_knowledge_base_takes_the_agent_from_the_call_not_the_arguments(
+    fake_db: FakeDb, monkeypatch
+):
+    fake_db.responses["GET calls"] = FakeResult({"voice_agent_id": "va-real"})
+    captured: dict = {}
+
+    async def fake_search(**kwargs):
+        captured.update(kwargs)
+        return [{"text": "MVP from 5,00,000 INR", "source": "pricing.pdf", "relevance": 0.9}]
+
+    monkeypatch.setattr(voice_tools.knowledge_base, "search", fake_search)
+
+    result = await voice_tools.dispatch(
+        "search_knowledge_base",
+        ORG_ID,
+        {
+            "call_id": "call-1",
+            "query": "what does an MVP cost",
+            # A hallucinated or injected agent id, which must be ignored entirely.
+            "voice_agent_id": "va-belonging-to-someone-else",
+            "organization_id": OTHER_ORG_ID,
+        },
+        fake_db,
+    )
+
+    assert captured["organization_id"] == ORG_ID
+    assert captured["voice_agent_id"] == "va-real"
+    assert result["passages"][0]["source"] == "pricing.pdf"
+
+
+@pytest.mark.asyncio
+async def test_search_knowledge_base_scopes_the_call_lookup_by_org(fake_db: FakeDb, monkeypatch):
+    fake_db.responses["GET calls"] = FakeResult(None)
+
+    result = await voice_tools.dispatch(
+        "search_knowledge_base", ORG_ID, {"call_id": "call-from-another-org", "query": "pricing"}, fake_db
+    )
+
+    assert result == {"error": "call not found"}
+    params = [c for c in fake_db.calls if c[0] == "GET" and c[1] == "calls"][0][2]["params"]
+    assert params["organization_id"] == f"eq.{ORG_ID}"
+
+
+@pytest.mark.asyncio
+async def test_search_knowledge_base_tells_the_agent_not_to_guess_when_nothing_matches(
+    fake_db: FakeDb, monkeypatch
+):
+    """Mid-call, an empty result is the moment an LLM is most likely to invent a price."""
+    fake_db.responses["GET calls"] = FakeResult({"voice_agent_id": "va-1"})
+
+    async def empty(**_kwargs):
+        return []
+
+    monkeypatch.setattr(voice_tools.knowledge_base, "search", empty)
+
+    result = await voice_tools.dispatch(
+        "search_knowledge_base", ORG_ID, {"call_id": "call-1", "query": "discounts"}, fake_db
+    )
+
+    assert result["passages"] == []
+    assert "Do not guess" in result["note"]
+
+
+@pytest.mark.asyncio
+async def test_search_knowledge_base_degrades_instead_of_failing_the_live_call(
+    fake_db: FakeDb, monkeypatch
+):
+    """A vector store outage must not leave the agent silent on a live phone line."""
+    from dracara_ai.errors import AiUpstreamError
+
+    fake_db.responses["GET calls"] = FakeResult({"voice_agent_id": "va-1"})
+
+    async def broken(**_kwargs):
+        raise AiUpstreamError("qdrant unreachable")
+
+    monkeypatch.setattr(voice_tools.knowledge_base, "search", broken)
+
+    result = await voice_tools.dispatch(
+        "search_knowledge_base", ORG_ID, {"call_id": "call-1", "query": "pricing"}, fake_db
+    )
+
+    assert result["passages"] == []
+    assert "unavailable" in result["note"]
+
+
+def test_every_dispatchable_tool_is_declared_to_the_platform():
+    """The dispatcher and the assistant's declared tool list are two halves of one bridge. A tool
+    added to only one half is either never callable or fails when called -- which is exactly the
+    state the whole feature was in before TOOL_DEFINITIONS existed."""
+    from app.services.voice_platform import TOOL_DEFINITIONS
+
+    declared = {t["function"]["name"] for t in TOOL_DEFINITIONS}
+    assert declared == set(voice_tools.TOOLS)
+
+
+def test_no_declared_tool_asks_the_model_for_a_call_id():
+    """call_id is injected by the webhook from the resolved call row. Declaring it would invite
+    the model to supply a pointer into another organization's data."""
+    from app.services.voice_platform import TOOL_DEFINITIONS
+
+    for tool in TOOL_DEFINITIONS:
+        properties = tool["function"]["parameters"].get("properties", {})
+        assert "call_id" not in properties, tool["function"]["name"]
+        assert "organization_id" not in properties, tool["function"]["name"]

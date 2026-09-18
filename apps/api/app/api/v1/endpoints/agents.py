@@ -10,19 +10,54 @@ from fastapi import APIRouter, Request, Response, status
 
 from app.api.deps import AdminDbDep, AdminDep, DbDep
 from app.core.config import settings
-from app.core.errors import UpstreamError
+from app.core.errors import PaymentRequiredError, UpstreamError
 from app.core.pagination import Page, PageParamsDep
 from app.core.concurrency import IfMatchDep, set_etag, update_guarded
 from app.core.rate_limit import limiter
 from app.db.supabase import get_http_client
 from app.schemas.agents import Agent, AgentInvite, AgentInviteResult, AgentPerformance, AgentUpdate
 from app.schemas.common import ERROR_RESPONSES
+from app.services import billing
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 _AGENT_SELECT = "*,roles(name)"
+
+
+async def _ensure_seat_available(admin_db: AdminDbDep, organization_id: str) -> None:
+    """Refuse to add an active user beyond the plan's seat limit (trial cap or paid seats).
+
+    Counted through the service role, pinned to the caller's own organization id from their
+    profile. An invitee counts from the moment they are invited: Supabase creates the auth user
+    then, and handle_new_user() creates their active users row with it.
+    """
+    sub = await admin_db.select(
+        "organization_subscriptions",
+        params={"select": "*", "organization_id": f"eq.{organization_id}"},
+    )
+    row = sub.first()
+    if row is None:
+        return  # fail open, as the plan gate does -- see app.services.billing
+    limit = billing.entitlements(row).seat_limit
+    used = await admin_db.select(
+        "users",
+        params={
+            "select": "id",
+            "organization_id": f"eq.{organization_id}",
+            "is_active": "eq.true",
+            "limit": "1",
+        },
+        count=True,
+    )
+    count = used.count if used.count is not None else len(used.rows)
+    if count >= limit:
+        raise PaymentRequiredError(
+            f"All {limit} seats on your plan are in use. Add seats under Settings → Billing, "
+            "or deactivate a user first.",
+            code="seat_limit_reached",
+        )
 
 
 def _agent_from_row(row: dict[str, Any]) -> Agent:
@@ -74,6 +109,7 @@ async def invite_agent(
     # admin_db's own construction (get_admin_db -> SupabaseAdminClient()) already raises
     # ServiceUnavailableError when the service-role key is missing, before this body runs --
     # no separate check needed here.
+    await _ensure_seat_available(admin_db, _admin["organization_id"])
 
     # A single-use, expiring, email-pinned token -- not the organization id or role
     # themselves -- is what goes into the invitee's signup metadata. handle_new_user()
@@ -94,6 +130,13 @@ async def invite_agent(
     try:
         response = await client.post(
             f"{settings.auth_base_url}/invite",
+            # Where the emailed link lands after Supabase verifies it: the web app's confirm
+            # page, which establishes the session and sends the invitee on to choose a
+            # password (they have none yet -- without this they could never sign in again).
+            # Must be on the Supabase Auth redirect allow-list; see SETUP.md.
+            params={
+                "redirect_to": f"{settings.web_app_origin}/auth/confirm?next=/auth/set-password%3Fmode%3Dinvite"
+            },
             headers={
                 "apikey": settings.supabase_service_role_key,
                 "Authorization": f"Bearer {settings.supabase_service_role_key}",
@@ -141,8 +184,13 @@ async def agent_performance(agent_id: str, db: DbDep, _admin: AdminDep) -> Agent
         )
         return result.count or 0
 
-    assigned = await count("leads", {"owner_id": f"eq.{agent_id}"})
-    wins = await count("leads", {"owner_id": f"eq.{agent_id}", "stage": "eq.won"})
+    assigned = await count("leads", {"owner_id": f"eq.{agent_id}", "deleted_at": "is.null"})
+    # Stage lives on opportunities, not leads (the single-owner-per-fact split); a filter on
+    # leads.stage names a column that no longer exists and fails the whole request.
+    wins = await count(
+        "opportunities",
+        {"owner_id": f"eq.{agent_id}", "stage": "eq.won", "deleted_at": "is.null"},
+    )
     stage_moves = await count(
         "activities", {"performed_by": f"eq.{agent_id}", "type": "eq.stage_change"}
     )
@@ -188,6 +236,7 @@ async def update_agent(
     db: DbDep,
     response: Response,
     if_match: IfMatchDep,
+    admin_db: AdminDbDep,
     _admin: AdminDep,
 ) -> Agent:
     changes = AgentUpdate.model_validate(body.changes()).model_dump(
@@ -195,6 +244,12 @@ async def update_agent(
     )
     if not changes:
         return await get_agent(agent_id, db, response, _admin)
+    if changes.get("is_active") is True:
+        # Reactivating a user takes a seat just as inviting one does. Only an actual
+        # inactive -> active change counts: edit forms resend is_active=true on every save.
+        current = await db.select("users", params={"select": "is_active", "id": f"eq.{agent_id}"})
+        if not current.one("Agent").get("is_active", True):
+            await _ensure_seat_available(admin_db, _admin["organization_id"])
 
     row = await update_guarded(
         db,

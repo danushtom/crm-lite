@@ -36,6 +36,117 @@ def _headers() -> dict[str, str]:
     }
 
 
+#: The mid-call tools declared to the platform, mirroring `app/services/voice_tools.py::TOOLS`.
+#:
+#: These were previously missing entirely: the dispatcher existed and the webhook could route a
+#: tool call, but no assistant was ever told the tools existed, so the model had nothing to call
+#: unless someone wired it up by hand in the vendor dashboard. Declaring them here keeps the two
+#: halves of the bridge in one repository.
+#:
+#: `call_id` is deliberately absent from every schema. The webhook injects it from the resolved
+#: call row (`arguments.setdefault("call_id", call_id)`), and a model-supplied value would be an
+#: attacker-controllable pointer into another organization's data.
+TOOL_DEFINITIONS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "check_consent",
+            "description": "Check whether a contact has consented to AI calls before continuing.",
+            "parameters": {
+                "type": "object",
+                "properties": {"contact_id": {"type": "string"}},
+                "required": ["contact_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_lead_context",
+            "description": "Fetch what the CRM knows about this lead: notes, follow-up date, tags.",
+            "parameters": {
+                "type": "object",
+                "properties": {"lead_id": {"type": "string"}},
+                "required": ["lead_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge_base",
+            "description": (
+                "Look something up in this agent's uploaded documents -- pricing, packages, "
+                "FAQs, delivery timelines. Use it whenever the caller asks about specifics "
+                "rather than answering from memory. If it returns nothing, say you will follow "
+                "up with the exact figure rather than guessing."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What to look up, in plain words"},
+                    "limit": {"type": "integer", "description": "Passages to return, 1-5"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "log_call_outcome",
+            "description": "Record how this call went before it ends.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "outcome": {"type": "string"},
+                    "summary": {"type": "string"},
+                },
+                "required": ["outcome"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_deal_stage",
+            "description": "Move a deal to a new pipeline stage when the caller's answer warrants it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "opportunity_id": {"type": "string"},
+                    "stage": {"type": "string"},
+                },
+                "required": ["opportunity_id", "stage"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "book_appointment",
+            "description": (
+                "Book a meeting with the rep who owns this lead. Confirm the date and time with "
+                "the caller before calling this."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lead_id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "scheduled_at": {
+                        "type": "string",
+                        "description": "ISO 8601 timestamp including the timezone offset",
+                    },
+                    "duration_minutes": {"type": "integer"},
+                },
+                "required": ["scheduled_at"],
+            },
+        },
+    },
+]
+
+
 def _webhook_url(path: str) -> str:
     base = settings.api_public_base_url.rstrip("/") if settings.api_public_base_url else ""
     return f"{base}/api/v1/voice-webhooks/{path}"
@@ -75,6 +186,7 @@ async def create_assistant(
             "provider": "openai",
             "model": "gpt-4o",
             "messages": [{"role": "system", "content": system_prompt}],
+            "tools": TOOL_DEFINITIONS,
         },
         "serverUrl": _webhook_url("platform/events"),
         "serverUrlSecret": settings.voice_platform_webhook_secret or None,
@@ -103,6 +215,7 @@ async def update_assistant(
             "provider": "openai",
             "model": "gpt-4o",
             "messages": [{"role": "system", "content": system_prompt}],
+            "tools": TOOL_DEFINITIONS,
         },
     }
     if voice_id:

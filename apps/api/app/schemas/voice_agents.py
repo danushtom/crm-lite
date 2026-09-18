@@ -71,6 +71,19 @@ class VoiceAgentDocument(APIModel):
     content_type: str | None = None
     created_at: datetime | None = None
 
+    # Knowledge-base indexing state. A document is stored whether or not it indexes, so the UI
+    # needs to distinguish "uploaded and searchable by the agent" from "uploaded only".
+    indexed_at: datetime | None = Field(
+        default=None, description="When this document was last indexed for agent retrieval"
+    )
+    chunk_count: int | None = Field(
+        default=None, description="Passages indexed. Null or 0 means the agent cannot cite it yet"
+    )
+    index_error: str | None = Field(
+        default=None,
+        description="Why indexing failed, if it did. The worker retries these automatically.",
+    )
+
 
 class CallSummary(APIModel):
     """List-view projection -- no transcript, to keep the call log page light."""

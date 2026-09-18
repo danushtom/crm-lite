@@ -1,0 +1,37 @@
+# Local infrastructure for Dracara Growth OS.
+#
+# Only Qdrant lives here. Postgres, Auth and Storage are Supabase's (`supabase start` or a hosted
+# project -- see SETUP.md), and the API, web and worker processes run on the host via `pnpm dev`
+# so they stay attached to your debugger and reload on save.
+#
+#   docker compose up -d qdrant     # start
+#   docker compose down             # stop, keeping the data volume
+#   docker compose down -v          # stop and erase the vector index (safe: it can be rebuilt
+#                                   # from Supabase Storage with the worker's reindex task)
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: dracara-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333" # REST + the dashboard at http://localhost:6333/dashboard
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      # Qdrant has no tenant isolation of its own -- every query's organization filter is what
+      # separates tenants (see packages/ai/src/dracara_ai/vector_store.py). Leaving the service
+      # unauthenticated is fine bound to localhost in development; in any shared or deployed
+      # environment set QDRANT__SERVICE__API_KEY here and QDRANT_API_KEY in the app env.
+      QDRANT__SERVICE__ENABLE_TLS: "false"
+      QDRANT__LOG_LEVEL: "INFO"
+    healthcheck:
+      # The Qdrant image ships no curl or wget, so probe the TCP port from the shell instead.
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  qdrant_storage:

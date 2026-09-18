@@ -30,6 +30,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import { AppTopBar } from "@/components/layout/app-top-bar";
+import { PlanBanner } from "@/components/billing/plan-banner";
 
 type MeResponse = {
   organization_name: string;
@@ -259,6 +260,8 @@ export function AppShell({
         <div className="border-b border-border bg-card/95 px-4 py-2.5 backdrop-blur md:hidden">
           <AppTopBarMobile />
         </div>
+
+        <PlanBanner />
 
         <main className="flex-1 px-4 pb-5 pt-3 lg:px-6 lg:pb-6 lg:pt-4">{children}</main>
       </div>

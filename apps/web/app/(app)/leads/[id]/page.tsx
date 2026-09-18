@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LeadTasks } from "@/components/leads/lead-tasks";
+import { PreCallBrief } from "@/components/leads/pre-call-brief";
 import { apiFetch, apiFetchOptional } from "@/lib/api";
 import {
   Building2,
@@ -284,6 +285,8 @@ export default function LeadOverviewPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left Column: Company & Contact */}
         <div className="space-y-6 lg:col-span-1">
+          {/* First in the column: it is what a rep opens this page for just before a call. */}
+          <PreCallBrief leadId={id} />
           <Card className="rounded-xl border border-border/70 bg-card shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
             <CardHeader className="border-b border-border/50 pb-3">
               <CardTitle className="flex items-center gap-2 text-base font-semibold">

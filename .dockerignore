@@ -1,0 +1,24 @@
+# Build context is the repo root (the Dockerfiles need the workspace packages).
+**/node_modules
+**/.next
+**/.turbo
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/*.egg-info
+**/.pytest_cache
+**/tests
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.github
+.claude
+.agents
+graphify-out
+supabase
+scripts
+*.md
+!packages/*/README.md

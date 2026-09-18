@@ -1,0 +1,110 @@
+# Production stack on a single host: the three apps plus Redis and Qdrant.
+# Supabase (Postgres, Auth, Storage) stays a hosted project -- it is not run here.
+#
+#   cp .env.example .env.production        # fill in real values (SETUP.md, "Deploying")
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Put a TLS-terminating reverse proxy (Caddy, nginx, a cloud load balancer) in front of `web`
+# (port 3000) and `api` (port 8000). Neither should be reachable over plain HTTP from outside.
+# On a managed platform (Render, Railway, Fly, ECS...) deploy the same three Dockerfiles as
+# separate services instead and use the platform's Redis.
+
+x-app-env: &app-env
+  env_file: .env.production
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *app-env
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        RELEASE: ${RELEASE:-}
+    environment:
+      ENVIRONMENT: production
+      LOG_JSON: "true"
+      REDIS_URL: redis://redis:6379/0
+      RATE_LIMIT_STORAGE_URI: redis://redis:6379/1
+      QDRANT_URL: http://qdrant:6333
+      # The reverse proxy on this host is the only way in; trust its X-Forwarded-For.
+      FORWARDED_ALLOW_IPS: "*"
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *app-env
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      args:
+        RELEASE: ${RELEASE:-}
+    environment:
+      ENVIRONMENT: production
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Exactly one beat: two would schedule every job twice.
+  beat:
+    <<: *app-env
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      args:
+        RELEASE: ${RELEASE:-}
+    command: ["celery", "-A", "worker_app", "beat", "--loglevel=info", "--schedule=/tmp/celerybeat-schedule"]
+    environment:
+      ENVIRONMENT: production
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  web:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+        SENTRY_ORG: ${SENTRY_ORG:-}
+        SENTRY_PROJECT: ${SENTRY_PROJECT:-}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      # Set QDRANT_API_KEY in .env.production; the apps send it, Qdrant requires it.
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
+
+volumes:
+  redis_data:
+  qdrant_storage:

@@ -20,7 +20,9 @@ import { toast } from "sonner";
 import { ApiError, apiFetch } from "@/lib/api";
 import { selectClass } from "@/components/shared/entity-drawer";
 import { CaptureKeysCard } from "@/components/settings/capture-keys-card";
+import { BillingSummaryCard } from "@/components/billing/billing-summary-card";
 import { useApiMutation } from "@/lib/use-api-mutation";
+import { browserTimezone, timezoneLabel, timezoneOptions } from "@/lib/timezones";
 
 type Me = {
   id: string;
@@ -38,19 +40,6 @@ type Organization = {
   name: string;
   slug: string | null;
 };
-
-const TIMEZONES = [
-  "Asia/Kolkata",
-  "Asia/Dubai",
-  "Asia/Singapore",
-  "Asia/Tokyo",
-  "Europe/London",
-  "Europe/Berlin",
-  "America/New_York",
-  "America/Chicago",
-  "America/Los_Angeles",
-  "Australia/Sydney",
-];
 
 export default function SettingsPage() {
   const qc = useQueryClient();
@@ -154,12 +143,13 @@ export default function SettingsPage() {
                     value={timezone}
                     onChange={(e) => setTimezone(e.target.value)}
                   >
-                    {TIMEZONES.map((t) => (
+                    {timezoneOptions(me?.timezone).map((t) => (
                       <option key={t} value={t}>
-                        {t.replace("_", " ")}
+                        {timezoneLabel(t)}
                       </option>
                     ))}
                   </select>
+                  <BrowserTimezoneHint current={timezone} onUse={setTimezone} />
                 </div>
               </div>
 
@@ -188,6 +178,8 @@ export default function SettingsPage() {
       </Card>
 
       <WorkspaceCard />
+
+      <BillingSummaryCard />
 
       <CaptureKeysCard />
 
@@ -327,5 +319,21 @@ function WorkspaceCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** Offers the browser's zone when it differs from the selected one -- one click to fix it. */
+function BrowserTimezoneHint({ current, onUse }: { current: string; onUse: (zone: string) => void }) {
+  const [detected, setDetected] = useState<string | undefined>();
+  useEffect(() => setDetected(browserTimezone()), []);
+  if (!detected || detected === current) return null;
+  return (
+    <button
+      type="button"
+      className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+      onClick={() => onUse(detected)}
+    >
+      Use this device&rsquo;s timezone ({timezoneLabel(detected)})
+    </button>
   );
 }

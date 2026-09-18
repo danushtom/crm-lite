@@ -12,9 +12,10 @@ from typing import Annotated
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.core.errors import ForbiddenError, UnauthorizedError
+from app.core.errors import ForbiddenError, PaymentRequiredError, UnauthorizedError
 from app.core.security import TokenUser, decode_access_token_async
 from app.db.supabase import SupabaseAdminClient, SupabaseClient
+from app.services import billing
 
 bearer_scheme = HTTPBearer(
     scheme_name="SupabaseAccessToken",
@@ -133,5 +134,43 @@ def require_permission(permission: str):
         if not has_permission(profile, permission):
             raise ForbiddenError(f"This action requires the '{permission}' permission")
         return profile
+
+    return _guard
+
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def plan_gate(feature: str | None = None):
+    """Build a dependency that refuses writes the organization's plan does not cover.
+
+    Attached per router in ``app/api/v1/router.py``. Reads are never gated: a lapsed
+    organization keeps full read access to its own data (read-only mode), and a downgraded one
+    can still see the voice agents or AI results it already has. ``feature`` additionally
+    requires that plan feature (see ``app.services.billing.PLANS``).
+
+    Takes ``DbDep`` rather than ``ProfileDep`` on purpose: RLS already narrows
+    ``organization_subscriptions`` to the caller's one row, so no profile lookup is needed.
+    """
+
+    async def _guard(request: Request, db: DbDep) -> None:
+        if request.method in _SAFE_METHODS:
+            return
+        row = await billing.load_subscription(db)
+        if row is None:
+            return  # fail open -- see the module docstring of app.services.billing
+        ent = billing.entitlements(row)
+        if not ent.writable:
+            raise PaymentRequiredError(
+                "Your free trial or subscription has ended, so this workspace is read-only. "
+                "An admin can choose a plan under Settings → Billing.",
+                code="subscription_inactive",
+            )
+        if feature and feature not in ent.features:
+            raise PaymentRequiredError(
+                "Your current plan does not include this feature. "
+                "An admin can upgrade under Settings → Billing.",
+                code="plan_upgrade_required",
+            )
 
     return _guard

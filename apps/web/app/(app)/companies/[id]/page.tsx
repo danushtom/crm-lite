@@ -10,6 +10,7 @@ import type { CompanyRow, ContactRow, LeadWithOpportunities } from "@dracara/typ
 import { apiFetch, apiListAll } from "@/lib/api";
 import { Avatar } from "@/components/shared/avatar";
 import { CompanyDrawer } from "@/components/companies/company-drawer";
+import { CompanyResearchPanel } from "@/components/companies/company-research-panel";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { PageSection } from "@/components/shared/page-section";
@@ -272,6 +273,9 @@ export default function CompanyDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Renders nothing unless web research is configured (EXA_API_KEY). */}
+      <CompanyResearchPanel companyId={id} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Contacts" value={contactsLoading ? "—" : String(contacts.length)} />

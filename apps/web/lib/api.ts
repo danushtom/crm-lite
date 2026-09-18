@@ -119,6 +119,76 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 }
 
 /**
+ * Call a server-sent-events endpoint, yielding each parsed `data:` frame.
+ *
+ * Exists so streaming goes through the same token attachment and `ApiError` handling as every
+ * other call rather than a raw `fetch` in a component — the reason `apiFetch` exists at all.
+ * `apiFetch` cannot serve this: it consumes the whole body as JSON, which is exactly what a
+ * stream must not do.
+ *
+ * Frames arrive split across arbitrary network chunks, so the buffer below only emits on a
+ * complete `\n\n` delimiter; a half-received frame is held over to the next chunk.
+ */
+export async function* apiStream<T>(
+  path: string,
+  init: RequestInit = {},
+): AsyncGenerator<T, void, unknown> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const headers = new Headers(init.headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  headers.set("Accept", "text/event-stream");
+  if (session?.access_token) {
+    headers.set("Authorization", `Bearer ${session.access_token}`);
+  }
+
+  const res = await fetch(`${apiOrigin()}${API_VERSION_PREFIX}${path}`, {
+    ...init,
+    headers,
+  });
+
+  // Errors arrive before the stream opens, as an ordinary problem+json response.
+  if (!res.ok) throw await toApiError(res);
+  if (!res.body) return;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary).trim();
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+
+        if (!frame.startsWith("data:")) continue;
+        const payload = frame.slice(5).trim();
+        if (payload === "[DONE]") return;
+        try {
+          yield JSON.parse(payload) as T;
+        } catch {
+          // A frame we cannot parse is not worth killing the stream over; the next one may be
+          // fine, and the server's own error frames are well-formed.
+          continue;
+        }
+      }
+    }
+  } finally {
+    // Releasing the lock lets the connection be cancelled when a component unmounts mid-answer.
+    reader.releaseLock();
+  }
+}
+
+/**
  * Fetch a single resource, returning `null` instead of throwing when it does not exist.
  *
  * Use for genuinely optional one-to-one lookups (a lead's opportunity, say). Other errors

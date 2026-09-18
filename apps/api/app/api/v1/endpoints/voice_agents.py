@@ -7,12 +7,12 @@ assistants that place/receive phone calls.
 
 Permission model: reading (`voice_agents.read`) is available to any role granted it (Admin
 always; Agent/SDR by default -- see the migration). Creating/editing/deleting a voice agent and
-placing calls (`voice_agents.write`/`.manage`) is checked here via `require_permission`, but
-the underlying RLS policies on `voice_agents`/`calls` are `is_admin()`-gated, not
-permission-aware -- a custom role granted `voice_agents.write` without full org access would
-pass this check but then be rejected by the database. This is a known, accepted v1 limitation
-given the cost and compliance stakes of the feature; creating/configuring agents stays
-admin-only in practice.
+placing calls (`voice_agents.write`/`.manage`) is checked here via `require_permission`, and as
+of 20260918000000_ai_features.sql the underlying RLS policies check the same grant through
+`has_permission()` rather than `is_admin()`. The two layers now agree: a custom role holding
+`voice_agents.write` without full org access passes both. Note that several handlers below still
+additionally declare `AdminDep` -- that is a deliberate product choice given the cost and
+compliance stakes of placing calls, not a limitation of the permission model.
 """
 
 from __future__ import annotations
@@ -44,6 +44,8 @@ from app.schemas.voice_agents import (
 from app.services import voice_agents as voice_agent_service
 from app.services import storage
 from app.services import voice_platform
+from app.services.ai import budget as ai_budget
+from app.services.ai import knowledge_base
 from app.services.calls import finalize_call
 
 router = APIRouter(prefix="/voice-agents", tags=["Voice Agents"])
@@ -344,8 +346,22 @@ async def update_voice_agent(
     description="Requires a role with full organization access. Blocked while a call is in progress.",
     responses=ERROR_RESPONSES,
 )
-async def delete_voice_agent(voice_agent_id: str, db: DbDep, if_match: IfMatchDep, _admin: AdminDep) -> Response:
+async def delete_voice_agent(
+    voice_agent_id: str,
+    db: DbDep,
+    profile: ProfileDep,
+    if_match: IfMatchDep,
+    _admin: AdminDep,
+) -> Response:
     await soft_delete_guarded(db, "voice_agents", record_id=voice_agent_id, if_match=if_match, what="Voice agent")
+    # The agent is soft-deleted, so its documents do not cascade away -- but nothing can reach
+    # them again either, and leaving their embedded text sitting in the vector store is a
+    # retention problem rather than a feature. Best-effort: a Qdrant outage must not block the
+    # delete, and the points are unreachable regardless (search is scoped to org + agent id,
+    # and a recreated agent gets a new id).
+    await knowledge_base.remove_agent(
+        organization_id=profile["organization_id"], voice_agent_id=voice_agent_id
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -383,7 +399,9 @@ async def list_documents(
 async def upload_document(
     voice_agent_id: str,
     db: DbDep,
+    admin_db: AdminDbDep,
     user: CurrentUserDep,
+    profile: ProfileDep,
     _admin: AdminDep,
     file: Annotated[UploadFile, File(description="Pricing sheet, FAQ, or script.")],
 ) -> VoiceAgentDocument:
@@ -405,6 +423,32 @@ async def upload_document(
         },
     )
     document = VoiceAgentDocument.model_validate(result.one("Document"))
+
+    # Index it so the agent can actually use it mid-call. Failure here is recorded on the row
+    # (`index_error`) and retried by the worker's reindex pass -- it never fails the upload,
+    # because the file is already stored and rejecting it would lose the user's work over a
+    # transient embedding-API outage. `indexed_at` on the response tells the UI which it was.
+    if settings.ai_configured:
+        try:
+            chunks, usage = await knowledge_base.index_document(
+                admin_db,
+                organization_id=profile["organization_id"],
+                voice_agent_id=voice_agent_id,
+                document_id=document.id,
+                filename=document.filename,
+                data=data,
+            )
+            document.chunk_count = chunks
+            document.indexed_at = datetime.now(timezone.utc)
+            await ai_budget.record(
+                admin_db,
+                organization_id=profile["organization_id"],
+                usage=usage,
+                user_id=user.sub,
+            )
+        except Exception as exc:
+            document.index_error = str(exc)[:500]
+
     document.file_url = (
         await storage.signed_url(
             bucket=settings.voice_kb_bucket, path=file_url, filename=document.filename
@@ -415,10 +459,22 @@ async def upload_document(
 
 
 @router.delete("/{voice_agent_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT, responses=ERROR_RESPONSES)
-async def delete_document(voice_agent_id: str, document_id: str, db: DbDep, _admin: AdminDep) -> Response:
+async def delete_document(
+    voice_agent_id: str,
+    document_id: str,
+    db: DbDep,
+    profile: ProfileDep,
+    _admin: AdminDep,
+) -> Response:
     deleted = await db.delete("voice_agent_documents", {"id": f"eq.{document_id}", "voice_agent_id": f"eq.{voice_agent_id}"})
     if deleted.first() is None:
         raise ForbiddenError("You do not have permission to delete this document")
+    # Postgres is the record and Qdrant is a derived index, so the row goes first and the points
+    # follow. remove_document swallows its own failures -- an unreachable vector store must not
+    # leave the user unable to delete a document.
+    await knowledge_base.remove_document(
+        organization_id=profile["organization_id"], document_id=document_id
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

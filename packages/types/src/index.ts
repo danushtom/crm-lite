@@ -43,6 +43,14 @@ export interface VoiceAgentDocument {
   file_url: string;
   content_type: string | null;
   created_at: string | null;
+  /**
+   * Knowledge-base indexing state. A document is stored whether or not it indexes, so these
+   * distinguish "the agent can quote from this" from "this is just a file on the record".
+   * `indexed_at` null with no `index_error` means it is queued for the worker's retry pass.
+   */
+  indexed_at: string | null;
+  chunk_count: number | null;
+  index_error: string | null;
 }
 
 export interface CallSummary {
@@ -351,4 +359,38 @@ export function scoreTier(score: number): "Hot" | "Warm" | "Cold" {
   if (score >= 80) return "Hot";
   if (score >= 50) return "Warm";
   return "Cold";
+}
+
+/** Billing (mirrors apps/api/app/schemas/billing.py). */
+export type PlanId = "starter" | "growth" | "scale";
+export type PlanFeature = "ai" | "voice_agents";
+
+export interface PlanInfo {
+  id: PlanId;
+  name: string;
+  price_per_seat_usd: number;
+  features: PlanFeature[];
+  description: string;
+  /** False when the server has no Dodo product configured for this plan. */
+  available: boolean;
+}
+
+export interface BillingOverview {
+  plan: "trial" | PlanId;
+  /** "trialing", or the subscription's status at Dodo Payments. */
+  status: string;
+  /** What the organization can do right now; "read_only" refuses every write. */
+  access: "trial" | "paid" | "read_only";
+  features: PlanFeature[];
+  trial_ends_at: string | null;
+  trial_days_left: number;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  seats: number | null;
+  seat_limit: number;
+  seats_used: number;
+  has_subscription: boolean;
+  can_manage: boolean;
+  configured: boolean;
+  plans: PlanInfo[];
 }

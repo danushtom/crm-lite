@@ -6,6 +6,7 @@ import { Button, Input } from "@dracara/ui";
 import { useEffect, useState } from "react";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { ExportButton } from "@/components/layout/export-button";
+import { ImportButton } from "@/components/layout/import-button";
 
 const TITLE_MAP: { prefix: string; title: string }[] = [
   { prefix: "/dashboard", title: "Dashboard" },
@@ -19,6 +20,7 @@ const TITLE_MAP: { prefix: string; title: string }[] = [
   { prefix: "/agents", title: "User management" },
   { prefix: "/reports", title: "Reports" },
   { prefix: "/settings", title: "Settings" },
+  { prefix: "/import", title: "Import" },
   { prefix: "/leads", title: "Leads" },
 ];
 
@@ -82,6 +84,7 @@ export function AppTopBar() {
                 className="h-9 rounded-lg border-border bg-muted/30 pl-9 shadow-inner"
               />
             </form>
+            <ImportButton />
             <ExportButton />
           </div>
         </div>

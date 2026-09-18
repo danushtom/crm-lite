@@ -20,6 +20,7 @@ from app.api.v1.router import api_router as v1_router
 from app.core.config import API_V1_PREFIX, settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.monitoring import init_monitoring
 from app.core.idempotency import IdempotencyMiddleware
 from app.core.middleware import (
     BodySizeLimitMiddleware,
@@ -76,6 +77,9 @@ TAGS_METADATA = [
     {"name": "Lead Capture", "description": "Public form/ad lead intake, authenticated by a capture key rather than a JWT, plus admin management of those keys."},
     {"name": "Voice Agents", "description": "AI voice agents that place and receive phone calls. Not to be confused with 'Agents' (team members)."},
     {"name": "Voice Webhooks", "description": "Callbacks from the voice platform (call lifecycle, tool-calling). Signature-verified, not JWT-authenticated."},
+    {"name": "Imports", "description": "CSV import of companies, contacts and leads, de-duplicated against what already exists."},
+    {"name": "Billing", "description": "The organization's plan, trial and seats; checkout, plan changes and the customer portal (Dodo Payments)."},
+    {"name": "Billing Webhooks", "description": "Subscription events from Dodo Payments. Signature-verified (Standard Webhooks), not JWT-authenticated."},
 ]
 
 
@@ -90,6 +94,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         SERVICE_VERSION,
         API_V1_PREFIX,
     )
+    for problem in settings.production_problems():
+        logger.error("production config: %s", problem)
     try:
         yield
     finally:
@@ -98,6 +104,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    init_monitoring()
     app = FastAPI(
         title=settings.project_name,
         version=SERVICE_VERSION,
@@ -109,7 +116,7 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
         servers=[{"url": "/", "description": "This deployment"}],
         contact={"name": "dracara.dev", "url": "https://dracara.dev"},
-        license_info={"name": "MIT"},
+        license_info={"name": "Proprietary"},
         # Trailing-slash redirects turn an authenticated POST into a GET; fail loudly instead.
         redirect_slashes=False,
     )

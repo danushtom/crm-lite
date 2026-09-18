@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from datetime import date, datetime, timedelta, timezone
 
@@ -9,11 +10,27 @@ import httpx
 from celery import Celery
 from celery.schedules import crontab
 
+from dracara_billing import entitlements
+
 from env import ENV
 from scoring import compute_priority_score
 from supabase_admin import SupabaseAdmin, insert_notification
 
 log = logging.getLogger(__name__)
+
+if ENV.sentry_dsn:
+    # Scheduled jobs fail silently otherwise: nobody is watching a beat tick. CeleryIntegration
+    # reports every task exception with the task name; request data is never attached.
+    import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
+
+    sentry_sdk.init(
+        dsn=ENV.sentry_dsn,
+        environment=ENV.environment,
+        release=ENV.release or None,
+        send_default_pii=False,
+        integrations=[CeleryIntegration(monitor_beat_tasks=True)],
+    )
 
 REDIS_URL = ENV.redis_url or "redis://localhost:6379/0"
 app = Celery("growth_os", broker=REDIS_URL, backend=REDIS_URL)
@@ -30,6 +47,16 @@ app.conf.beat_schedule = {
         "task": "worker_app.stale_call_reconciliation",
         "schedule": crontab(minute="*/10"),
     },
+    # AI jobs. Call notes are near-real-time (a rep opening the call log right after a call
+    # should find them); deal health runs nightly and reaches owners through per-tenant
+    # notifications (never the global daily brief); reindexing is a slow retry path for uploads that failed to index.
+    "call-notes": {"task": "worker_app.call_notes", "schedule": crontab(minute="*/2")},
+    "deal-health": {"task": "worker_app.deal_health", "schedule": crontab(minute=0, hour=7)},
+    "calendar-push": {"task": "worker_app.calendar_push", "schedule": crontab(minute="*/2")},
+    "reindex-knowledge-base": {
+        "task": "worker_app.reindex_knowledge_base",
+        "schedule": crontab(minute=30, hour="*/2"),
+    },
 }
 
 
@@ -41,6 +68,37 @@ def _sb() -> SupabaseAdmin:
 
 def _today_iso() -> str:
     return date.today().isoformat()
+
+
+def _full_access_users(sb: SupabaseAdmin) -> list[dict]:
+    """Every active user, in every organization, whose role grants full access.
+
+    "Admin" is organization-configurable data (roles.grants_full_access), not a column on users:
+    the old ``users.role`` enum was dropped by the dynamic-roles migration, and a query that
+    still filtered on it failed every run. Callers group by ``organization_id`` themselves.
+    """
+    return sb.request(
+        "GET",
+        "/users",
+        params={
+            "select": "id,email,full_name,organization_id,roles!inner(grants_full_access)",
+            "roles.grants_full_access": "eq.true",
+            "is_active": "eq.true",
+        },
+    ) or []
+
+
+def _writable_org_ids(sb: SupabaseAdmin) -> set[str] | None:
+    """Organizations on a live plan (paid or in trial), or None when billing has no rows at all
+    (not set up -- fail open, as the API's plan gate does)."""
+    rows = sb.request(
+        "GET",
+        "/organization_subscriptions",
+        params={"select": "organization_id,plan,status,seats,trial_ends_at,current_period_end"},
+    ) or []
+    if not rows:
+        return None
+    return {str(r["organization_id"]) for r in rows if entitlements(r).writable}
 
 
 @app.task(name="worker_app.followup_reminder")
@@ -181,8 +239,6 @@ def calendar_sync() -> str:
     if not ENV.google_client_id or not ENV.google_client_secret:
         return "skip:no_google_config"
     try:
-        from google.auth.transport.requests import Request
-        from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
     except ImportError:
         return "skip:google_libs_missing"
@@ -197,30 +253,11 @@ def calendar_sync() -> str:
         return "sync:0"
     inserted = 0
     for u in users:
-        rt = u.get("google_refresh_token")
-        if not rt:
+        # Shared with calendar_push so the two directions cannot drift on scopes or token
+        # persistence -- see _google_credentials.
+        creds = _google_credentials(sb, u)
+        if creds is None:
             continue
-        creds = Credentials(
-            token=u.get("google_access_token"),
-            refresh_token=rt,
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=ENV.google_client_id,
-            client_secret=ENV.google_client_secret,
-            scopes=["https://www.googleapis.com/auth/calendar.events"],
-        )
-        try:
-            creds.refresh(Request())
-        except Exception as e:
-            log.warning("calendar token refresh failed for %s: %s", u["id"], e)
-            continue
-
-        sb.request(
-            "PATCH",
-            "/users",
-            params={"id": f"eq.{u['id']}"},
-            json_body={"google_access_token": creds.token},
-            prefer="return=minimal",
-        )
 
         service = build("calendar", "v3", credentials=creds, cache_discovery=False)
         now = datetime.now(timezone.utc).isoformat()
@@ -327,7 +364,7 @@ def overdue_escalation() -> str:
         },
     )
     tasks = rows or []
-    admins = sb.request("GET", "/users", params={"select": "id,organization_id", "role": "eq.admin"})
+    admins = _full_access_users(sb)
     # Admins are scoped to their own tenant -- an admin in one organization must never be
     # notified about (or learn the existence of) an overdue task in another's.
     admin_ids_by_org: dict[str, list[str]] = {}
@@ -360,43 +397,126 @@ def overdue_escalation() -> str:
     return f"escalated:{len(tasks)}"
 
 
+def _count_by_org(rows: list[dict] | None) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows or []:
+        key = str(row["organization_id"])
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _brief_html(*, name: str, org_name: str, due_today: int, overdue: int, new_leads: int) -> str:
+    link = f"{ENV.web_app_url.rstrip('/')}/dashboard"
+    rows = "".join(
+        f"<tr><td style='padding:4px 16px 4px 0'>{label}</td>"
+        f"<td style='padding:4px 0;font-weight:600'>{value}</td></tr>"
+        for label, value in (
+            ("Follow-ups due today", due_today),
+            ("Overdue follow-ups", overdue),
+            ("New leads in the last 24 hours", new_leads),
+        )
+    )
+    return (
+        f"<p>Good morning {html.escape(name)},</p>"
+        f"<p>Here is today's picture for <strong>{html.escape(org_name)}</strong>:</p>"
+        f"<table>{rows}</table>"
+        f"<p><a href='{html.escape(link)}'>Open your dashboard</a></p>"
+        "<p style='color:#6b7280;font-size:12px'>You receive this because you are an admin of "
+        "this workspace in Dracara Growth OS.</p>"
+    )
+
+
 @app.task(name="worker_app.daily_brief")
 def daily_brief() -> str:
-    if not ENV.resend_api_key or not ENV.admin_email:
+    """Morning email to each organization's admins, about their own organization only.
+
+    Every count is grouped by the row's own ``organization_id`` and sent only to that
+    organization's full-access users, the same routing rule as ``overdue_escalation``. Lapsed
+    organizations (expired trial, cancelled plan) are skipped rather than emailed forever.
+    """
+    if not ENV.resend_api_key:
         return "skip:no_resend"
     sb = _sb()
-    today = _today_iso()
-    tasks_today = sb.request(
-        "GET",
-        "/tasks",
-        params={
-            "select": "id",
-            "due_at": f"gte.{date.today().isoformat()}T00:00:00+00:00",
-            "and": f"(due_at.lt.{(date.today() + timedelta(days=1)).isoformat()}T00:00:00+00:00)",
-            "status": "eq.pending",
-        },
-    )
-    n_tasks = len(tasks_today or [])
-    html = f"<p>Daily brief — follow-ups due today: {n_tasks}</p>"
-    try:
-        httpx.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {ENV.resend_api_key}",
-                "Content-Type": "application/json",
+    now = datetime.now(timezone.utc)
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+
+    live_orgs = _writable_org_ids(sb)
+    due_today = _count_by_org(
+        sb.request(
+            "GET",
+            "/tasks",
+            params={
+                "select": "organization_id",
+                "status": "eq.pending",
+                "and": f"(due_at.gte.{today.isoformat()}T00:00:00+00:00,"
+                f"due_at.lt.{tomorrow.isoformat()}T00:00:00+00:00)",
+                "limit": "10000",
             },
-            json={
-                "from": "Growth OS <onboarding@resend.dev>",
-                "to": [ENV.admin_email],
-                "subject": f"Dracara daily brief {today}",
-                "html": html,
-            },
-            timeout=30.0,
         )
-    except Exception as e:
-        log.warning("Resend failed: %s", e)
-        return f"fail:{e}"
-    return "sent"
+    )
+    overdue = _count_by_org(
+        sb.request(
+            "GET",
+            "/tasks",
+            params={
+                "select": "organization_id",
+                "status": "eq.pending",
+                "due_at": f"lt.{today.isoformat()}T00:00:00+00:00",
+                "limit": "10000",
+            },
+        )
+    )
+    new_leads = _count_by_org(
+        sb.request(
+            "GET",
+            "/leads",
+            params={
+                "select": "organization_id",
+                "created_at": f"gte.{(now - timedelta(days=1)).isoformat()}",
+                "deleted_at": "is.null",
+                "limit": "10000",
+            },
+        )
+    )
+    org_names = {
+        str(o["id"]): o.get("name") or "your workspace"
+        for o in sb.request("GET", "/organizations", params={"select": "id,name"}) or []
+    }
+
+    sent = 0
+    for admin in _full_access_users(sb):
+        org_id = str(admin["organization_id"])
+        if not admin.get("email") or (live_orgs is not None and org_id not in live_orgs):
+            continue
+        try:
+            response = httpx.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {ENV.resend_api_key}",
+                    "Content-Type": "application/json",
+                    # A retried task must not email the same person twice in one day.
+                    "Idempotency-Key": f"daily-brief/{admin['id']}/{today.isoformat()}",
+                },
+                json={
+                    "from": ENV.email_from,
+                    "to": [admin["email"]],
+                    "subject": f"Your Dracara brief for {today.strftime('%d %b')}",
+                    "html": _brief_html(
+                        name=admin.get("full_name") or "there",
+                        org_name=org_names.get(org_id, "your workspace"),
+                        due_today=due_today.get(org_id, 0),
+                        overdue=overdue.get(org_id, 0),
+                        new_leads=new_leads.get(org_id, 0),
+                    ),
+                },
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            sent += 1
+        except Exception as e:
+            log.warning("daily brief failed user=%s: %s", admin["id"], e)
+    return f"sent:{sent}"
 
 
 @app.task(name="worker_app.stale_call_reconciliation")
@@ -428,3 +548,186 @@ def stale_call_reconciliation() -> str:
             prefer="return=minimal",
         )
     return f"reconciled:{len(rows)}"
+
+
+# ---------------------------------------------------------------------------
+# AI jobs. The implementations live in ai_jobs.py; these are the Celery bindings.
+# ---------------------------------------------------------------------------
+
+
+@app.task(name="worker_app.call_notes")
+def call_notes() -> str:
+    """Summarise finished calls, extract action items, create the follow-up tasks."""
+    from ai_jobs import run_call_notes
+
+    return run_call_notes()
+
+
+@app.task(name="worker_app.deal_health")
+def deal_health() -> str:
+    """Nightly at-risk assessment over every organization's open pipeline."""
+    from ai_jobs import run_deal_health
+
+    return run_deal_health()
+
+
+@app.task(name="worker_app.reindex_knowledge_base")
+def reindex_knowledge_base() -> str:
+    """Retry indexing for voice-agent documents that failed at upload time."""
+    from ai_jobs import run_reindex_knowledge_base
+
+    return run_reindex_knowledge_base()
+
+
+# ---------------------------------------------------------------------------
+# Google Calendar push.
+# ---------------------------------------------------------------------------
+
+
+def _google_credentials(sb: SupabaseAdmin, user: dict) -> object | None:
+    """Refresh and return one user's Google credentials, persisting the new access token.
+
+    Extracted so calendar_sync (pull) and calendar_push (push) cannot drift on token handling --
+    the scope list in particular, which silently degrades to "read only" if the two disagree.
+    """
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+
+    refresh_token = user.get("google_refresh_token")
+    if not refresh_token:
+        return None
+
+    creds = Credentials(
+        token=user.get("google_access_token"),
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=ENV.google_client_id,
+        client_secret=ENV.google_client_secret,
+        scopes=["https://www.googleapis.com/auth/calendar.events"],
+    )
+    try:
+        creds.refresh(Request())
+    except Exception as e:
+        log.warning("calendar token refresh failed for %s: %s", user.get("id"), e)
+        return None
+
+    sb.request(
+        "PATCH",
+        "/users",
+        params={"id": f"eq.{user['id']}"},
+        json_body={"google_access_token": creds.token},
+        prefer="return=minimal",
+    )
+    return creds
+
+
+@app.task(name="worker_app.calendar_push")
+def calendar_push() -> str:
+    """Push CRM-created meetings out to the owner's Google Calendar.
+
+    calendar_sync only ever pulled *from* Google, which is why voice_tools.book_appointment used
+    to end with an apology -- the AI agent could book a meeting on a live call and the rep would
+    never see it on their calendar. This is the missing direction.
+
+    `google_event_id IS NULL` is what identifies a meeting that originated in the CRM: rows pulled
+    from Google always carry one. Writing the id back is also what makes this idempotent, and the
+    column's UNIQUE constraint is the backstop if two workers race.
+    """
+    if not ENV.google_client_id or not ENV.google_client_secret:
+        return "skip:no_google_config"
+    try:
+        from googleapiclient.discovery import build
+    except ImportError:
+        return "skip:google_libs_missing"
+
+    sb = _sb()
+    # Only forward-looking meetings: back-filling a month of history into someone's calendar the
+    # first time this job runs would be worse than not running it.
+    now = datetime.now(timezone.utc)
+    rows = sb.request(
+        "GET",
+        "/meetings",
+        params={
+            "select": "id,owner_id,title,scheduled_at,duration_minutes,lead_id",
+            "google_event_id": "is.null",
+            "status": "eq.scheduled",
+            "scheduled_at": f"gte.{now.isoformat()}",
+            "order": "scheduled_at.asc,id.asc",
+            "limit": "100",
+        },
+    ) or []
+    if not rows:
+        return "pushed:0"
+
+    # One credential refresh per owner rather than per meeting.
+    credentials_by_owner: dict[str, object | None] = {}
+    pushed = 0
+
+    for meeting in rows:
+        owner_id = str(meeting["owner_id"])
+        if owner_id not in credentials_by_owner:
+            users = sb.request(
+                "GET",
+                "/users",
+                params={
+                    "select": "id,google_refresh_token,google_access_token",
+                    "id": f"eq.{owner_id}",
+                },
+            )
+            user = (users or [None])[0]
+            credentials_by_owner[owner_id] = _google_credentials(sb, user) if user else None
+
+        creds = credentials_by_owner[owner_id]
+        if creds is None:
+            # The rep has not connected Google. The meeting still exists in the CRM; there is
+            # simply nowhere to push it.
+            continue
+
+        start = _parse_instant(meeting.get("scheduled_at"))
+        if start is None:
+            log.warning("calendar_push bad scheduled_at meeting=%s", meeting["id"])
+            continue
+        end = start + timedelta(minutes=int(meeting.get("duration_minutes") or 30))
+
+        try:
+            service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+            event = (
+                service.events()
+                .insert(
+                    calendarId="primary",
+                    body={
+                        "summary": meeting.get("title") or "Meeting",
+                        "description": "Created in Dracara Growth OS.",
+                        "start": {"dateTime": start.isoformat()},
+                        "end": {"dateTime": end.isoformat()},
+                    },
+                )
+                .execute()
+            )
+        except Exception as e:
+            log.warning("calendar_push insert failed meeting=%s: %s", meeting["id"], e)
+            continue
+
+        sb.request(
+            "PATCH",
+            "/meetings",
+            params={"id": f"eq.{meeting['id']}"},
+            json_body={
+                "google_event_id": event.get("id"),
+                "google_meet_link": event.get("hangoutLink"),
+            },
+            prefer="return=minimal",
+        )
+        pushed += 1
+
+    return f"pushed:{pushed}"
+
+
+def _parse_instant(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

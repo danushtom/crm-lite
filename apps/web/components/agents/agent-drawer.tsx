@@ -10,6 +10,7 @@ import { compactPayload } from "@/lib/forms";
 import { useApiMutation } from "@/lib/use-api-mutation";
 import { EntityDrawer, SelectField, TextField } from "@/components/shared/entity-drawer";
 import type { Role } from "@dracara/types";
+import { timezoneLabel, timezoneOptions } from "@/lib/timezones";
 
 export type AgentSummary = {
   id: string;
@@ -24,17 +25,6 @@ export type AgentSummary = {
 const ACCESS_OPTIONS = [
   { value: "true", label: "Active" },
   { value: "false", label: "Access revoked" },
-];
-
-const COMMON_TIMEZONES = [
-  "Asia/Kolkata",
-  "Asia/Dubai",
-  "Asia/Singapore",
-  "Europe/London",
-  "Europe/Berlin",
-  "America/New_York",
-  "America/Los_Angeles",
-  "Australia/Sydney",
 ];
 
 /**
@@ -179,7 +169,7 @@ export function AgentDrawer({ agent }: { agent: AgentSummary }) {
         label="Timezone"
         value={form.timezone}
         onChange={(v) => set("timezone", v)}
-        options={COMMON_TIMEZONES.map((t) => ({ value: t, label: t.replace("_", " ") }))}
+        options={timezoneOptions(agent.timezone).map((t) => ({ value: t, label: timezoneLabel(t) }))}
         hint="Decides when their follow-up queue rolls over to the next day."
       />
 

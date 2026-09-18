@@ -13,9 +13,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Awaitable, Callable
 
+from dracara_ai.errors import AiError
+
 from app.core.errors import NotFoundError
 from app.db.supabase import SupabaseAdminClient
 from app.services import leads as lead_service
+from app.services.ai import knowledge_base
 
 logger = logging.getLogger(__name__)
 
@@ -125,11 +128,57 @@ async def book_appointment(org_id: str, arguments: dict[str, Any], admin_db: Sup
     meeting = result.one("Meeting")
     return {
         "meeting_id": meeting["id"],
-        # This creates a CRM record only -- calendar_sync only pulls FROM Google Calendar
-        # today, there is no push-to-Google path yet. Do not tell the caller it was added to
-        # their Google Calendar.
-        "note": "Added to the CRM. This will not appear on the rep's Google Calendar automatically.",
+        # The worker's `calendar_push` job (every two minutes) forwards CRM-created meetings to
+        # the owner's Google Calendar, so this is now true rather than the apology it replaced.
+        # It is still asynchronous and it still depends on that rep having connected Google, so
+        # the wording promises "shortly", not "already done".
+        "note": "Booked. It will appear on the rep's calendar shortly.",
     }
+
+
+async def search_knowledge_base(org_id: str, arguments: dict[str, Any], admin_db: SupabaseAdminClient) -> dict[str, Any]:
+    """Look something up in the agent's uploaded documents (pricing sheets, FAQs, scripts).
+
+    Note which two arguments are *not* taken from `arguments`: `org_id` is the webhook's resolved
+    value, and `voice_agent_id` is read from the `calls` row this tool call belongs to. Qdrant has
+    no row-level security, so its payload filter is the entire tenant boundary -- accepting either
+    from the model's tool-call arguments would let a hallucinated (or injected) id read another
+    organization's pricing. The query text is the only thing the model gets to choose.
+    """
+    query = arguments.get("query")
+    if not query:
+        return {"error": "query is required"}
+
+    call_id = arguments.get("call_id")
+    if not call_id:
+        return {"error": "call_id is required"}
+    call_result = await admin_db.select(
+        "calls",
+        params={"select": "voice_agent_id", "id": f"eq.{call_id}", "organization_id": f"eq.{org_id}"},
+    )
+    call = call_result.first()
+    if call is None:
+        return {"error": "call not found"}
+
+    try:
+        passages = await knowledge_base.search(
+            organization_id=org_id,
+            voice_agent_id=call["voice_agent_id"],
+            query=str(query)[:500],
+            limit=int(arguments.get("limit") or 3),
+        )
+    except AiError as exc:
+        # Mid-call, on a live phone line: degrade to "I don't have that to hand" rather than
+        # failing the tool call and leaving the agent silent.
+        logger.warning("voice_kb_search_failed org_id=%s error=%s", org_id, exc)
+        return {"passages": [], "note": "The knowledge base is unavailable right now."}
+
+    if not passages:
+        return {
+            "passages": [],
+            "note": "Nothing in the uploaded documents covers this. Do not guess an answer.",
+        }
+    return {"passages": passages}
 
 
 TOOLS: dict[str, ToolFn] = {
@@ -138,6 +187,7 @@ TOOLS: dict[str, ToolFn] = {
     "log_call_outcome": log_call_outcome,
     "update_deal_stage": update_deal_stage,
     "book_appointment": book_appointment,
+    "search_knowledge_base": search_knowledge_base,
 }
 
 
