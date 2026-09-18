@@ -19,6 +19,7 @@ import { leadStage, leadValue } from "@/lib/leads";
 import { CompaniesGallery } from "@/components/companies/companies-gallery";
 import { Avatar } from "@/components/shared/avatar";
 import { TablePagination } from "@/components/shared/table-pagination";
+import { DeleteOnlyBulkActions, RowCheckbox, SelectPageCheckbox, useRowSelection } from "@/components/shared/bulk-actions";
 import { StatsStrip } from "@/components/shared/stats-strip";
 import { compareValues, usePagination, useSort } from "@/lib/use-table-controls";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -152,6 +153,8 @@ export default function CompaniesPage() {
   );
 
   const pagination = usePagination(sortedRows);
+  const selectableIds = useMemo(() => sortedRows.map((r) => r.id), [sortedRows]);
+  const selection = useRowSelection(selectableIds);
 
   const summary = useMemo(() => {
     const total = rows.reduce((sum, row) => sum + row.value, 0);
@@ -320,6 +323,9 @@ export default function CompaniesPage() {
               <table className="w-full min-w-[920px] border-collapse text-sm">
               <thead>
                   <tr className="select-none border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground">
+                    <th className="w-8 py-2.5">
+                      <SelectPageCheckbox selection={selection} pageIds={pagination.pageRows.map((r) => r.id)} label="companies" />
+                    </th>
                     {SORTABLE_COLUMNS.map((col) => (
                       <th
                         key={col.key}
@@ -351,6 +357,9 @@ export default function CompaniesPage() {
                     className="group border-b border-border/50 transition-colors hover:bg-muted/30 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
+                      <td className="w-8 py-2.5">
+                        <RowCheckbox selection={selection} id={c.id} label={c.name} />
+                      </td>
                       <td className="py-2.5 pr-4">
                         {/* The list had no way into a company at all; only the gallery linked
                             here, and until now that link 404ed. */}
@@ -414,6 +423,8 @@ export default function CompaniesPage() {
           )}
         </CardContent>
       </Card>
+
+      {viewMode === "list" ? <DeleteOnlyBulkActions kind="companies" noun="company" selection={selection} /> : null}
 
       {viewMode === "list" ? (
         <TablePagination

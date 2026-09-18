@@ -101,7 +101,10 @@ class TableDb(FakeDb):
 
     async def update(self, table, params, payload):
         self.calls.append(("PATCH", table, {"params": params, "payload": payload}))
-        rows = [r for r in self.tables.get(table, []) if all(_matches(r, k, v) for k, v in params.items())]
+        rows = [
+            r for r in self.tables.get(table, [])
+            if all(_matches(r, k, v) for k, v in params.items() if k not in self._RESERVED)
+        ]
         for r in rows:
             r.update(payload)
         return FakeResult(rows)

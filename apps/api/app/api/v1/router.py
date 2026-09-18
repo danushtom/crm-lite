@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     auth,
     billing,
     billing_webhooks,
+    bulk,
     companies,
     contacts,
     dashboard,
@@ -57,6 +58,7 @@ api_router.include_router(tasks.router, dependencies=_writable)
 api_router.include_router(meetings.router, dependencies=_writable)
 api_router.include_router(imports.router, dependencies=_writable)
 api_router.include_router(recently_deleted.router, dependencies=_writable)
+api_router.include_router(bulk.router, dependencies=_writable)
 api_router.include_router(notifications.router)
 api_router.include_router(roles.router, dependencies=_writable)
 api_router.include_router(agents.router, dependencies=_writable)

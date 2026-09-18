@@ -1872,6 +1872,10 @@ Imports run as the caller under RLS, so an import can create only what its user 
 Soft deletes (23.1) were recoverable in principle only: every SELECT policy hides deleted rows, so undoing one meant editing the database. Settings -> Recently deleted now lists deleted leads, opportunities, contacts and companies and restores them. Both operations go through SECURITY DEFINER functions (recently_deleted, restore_record), for the same reason the soft_delete_* functions do. Both apply one shared rule, may_manage_deleted(), which mirrors each delete function's own check: you can see and restore what you could have deleted. A child under a deleted parent is listed as blocked, and restoring it is refused with a pointer to the parent. Restoring an opportunity that would give its lead a second active pursuit is refused. A trigger now records deleted_by on the four tables.
 
 
+23.11 Bulk actions
+The lead, contact and company lists now support multi-select. Leads can be reassigned (full-access roles only, and only to an active member of the organization), tagged, untagged or deleted in bulk; contacts and companies can be deleted in bulk. POST /bulk/{kind} runs as the caller under RLS and does per record what the single-record path does, so a bulk action cannot do anything its user could not do one record at a time. Each id gets its own result. The UI keeps only the failed rows selected, so they can be retried. Ids must be UUIDs, because they are interpolated into an in.(...) filter. Bulk writes skip If-Match by design. Reassigning a lead, singly or in bulk, changes the lead's owner_id only; its opportunities keep their own owner_id, which agent performance reads for wins.
+
+
 23.5 What in this document is now stale
 Section
 Why it's stale

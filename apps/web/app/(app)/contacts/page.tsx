@@ -39,6 +39,7 @@ import Link from "next/link";
 import { ContactDrawer } from "@/components/contacts/contact-drawer";
 import { ContactsGallery } from "@/components/contacts/contacts-gallery";
 import { TablePagination } from "@/components/shared/table-pagination";
+import { DeleteOnlyBulkActions, RowCheckbox, SelectPageCheckbox, useRowSelection } from "@/components/shared/bulk-actions";
 import { StatsStrip } from "@/components/shared/stats-strip";
 import { LogActivityDrawer } from "@/components/activities/log-activity-drawer";
 import { usePagination } from "@/lib/use-table-controls";
@@ -169,6 +170,8 @@ export default function ContactsPage() {
   }, [rows, leads, selectedStage, searchQuery, sortField, sortOrder]);
 
   const pagination = usePagination(filteredAndSortedRows);
+  const selectableIds = useMemo(() => filteredAndSortedRows.map((r) => r.id), [filteredAndSortedRows]);
+  const selection = useRowSelection(selectableIds);
 
   const { mutate: updateContact } = useApiMutation({
     errorTitle: "Could not update contact",    mutationFn: async ({ id, data }: { id: string; data: Partial<ContactRow> }) => {
@@ -512,9 +515,9 @@ export default function ContactsPage() {
               <thead>
                 <tr className="border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground select-none">
                   <th className="w-8 py-2.5">
-                    <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" />
+                    <SelectPageCheckbox selection={selection} pageIds={pagination.pageRows.map((r) => r.id)} label="contacts" />
                   </th>
-                  <th 
+                  <th
                     className="py-2.5 pr-4 cursor-pointer hover:text-foreground"
                     onClick={() => {
                       if (sortField === "name") setSortOrder(sortOrder === "asc" ? "desc" : "asc");
@@ -596,7 +599,7 @@ export default function ContactsPage() {
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
                     <td className="w-8 py-2.5">
-                      <input type="checkbox" className="h-3.5 w-3.5 rounded border-border" />
+                      <RowCheckbox selection={selection} id={c.id} label={c.full_name ?? "contact"} />
                     </td>
                     <td className="py-2.5 pr-4">
                       <div className="flex items-center gap-2.5">
@@ -713,6 +716,8 @@ export default function ContactsPage() {
           )}
         </CardContent>
       </Card>
+
+      {viewMode === "list" ? <DeleteOnlyBulkActions kind="contacts" noun="contact" selection={selection} /> : null}
 
       {viewMode === "list" ? (
         <TablePagination

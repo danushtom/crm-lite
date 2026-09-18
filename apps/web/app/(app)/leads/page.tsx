@@ -22,6 +22,8 @@ import { AskAiDrawer } from "@/components/ai/ask-ai-drawer";
 import { LeadsGallery } from "@/components/leads/leads-gallery";
 import { TablePagination } from "@/components/shared/table-pagination";
 import { StatsStrip } from "@/components/shared/stats-strip";
+import { RowCheckbox, SelectPageCheckbox, useRowSelection } from "@/components/shared/bulk-actions";
+import { LeadBulkActions } from "@/components/leads/lead-bulk-actions";
 import { compareValues, usePagination, useSort } from "@/lib/use-table-controls";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { cn } from "@dracara/ui";
@@ -147,6 +149,8 @@ export default function LeadsPage() {
   }, [searchedRows, sortKey, sortDirection]);
 
   const pagination = usePagination(sortedRows);
+  const selectableIds = useMemo(() => searchedRows.map((r) => r.id), [searchedRows]);
+  const selection = useRowSelection(selectableIds);
 
   const summary = useMemo(() => {
     const totalValue = rows.reduce((sum, row) => sum + row.value, 0);
@@ -318,6 +322,13 @@ export default function LeadsPage() {
               <table className="w-full min-w-[920px] border-collapse text-sm">
               <thead>
                   <tr className="border-b border-border/70 text-left text-[11px] font-semibold text-muted-foreground select-none">
+                    <th className="w-8 py-2.5">
+                      <SelectPageCheckbox
+                        selection={selection}
+                        pageIds={pagination.pageRows.map((r) => r.id)}
+                        label="leads"
+                      />
+                    </th>
                     {SORTABLE_COLUMNS.map((col) => (
                       <th
                         key={col.key}
@@ -348,6 +359,9 @@ export default function LeadsPage() {
                     className="group border-b border-border/50 transition-colors hover:bg-muted/30 animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
+                      <td className="w-8 py-2.5">
+                        <RowCheckbox selection={selection} id={lead.id} label={`${lead.projectType} at ${lead.companyName}`} />
+                      </td>
                       <td className="py-2.5 pr-4">
                         <div className="leading-tight">
                           <Link href={`/leads/${lead.id}`} className="text-[13px] font-semibold text-foreground underline-offset-2 hover:underline">
@@ -378,6 +392,8 @@ export default function LeadsPage() {
           )}
         </CardContent>
       </Card>
+
+      {viewMode === "list" ? <LeadBulkActions selection={selection} /> : null}
 
       {viewMode === "list" ? (
         <TablePagination

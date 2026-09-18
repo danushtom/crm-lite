@@ -78,6 +78,7 @@ TAGS_METADATA = [
     {"name": "Voice Agents", "description": "AI voice agents that place and receive phone calls. Not to be confused with 'Agents' (team members)."},
     {"name": "Voice Webhooks", "description": "Callbacks from the voice platform (call lifecycle, tool-calling). Signature-verified, not JWT-authenticated."},
     {"name": "Recently deleted", "description": "Soft-deleted companies, contacts, leads and opportunities, and restoring them."},
+    {"name": "Bulk actions", "description": "One action applied to many selected leads, contacts or companies."},
     {"name": "Imports", "description": "CSV import of companies, contacts and leads, de-duplicated against what already exists."},
     {"name": "Billing", "description": "The organization's plan, trial and seats; checkout, plan changes and the customer portal (Dodo Payments)."},
     {"name": "Billing Webhooks", "description": "Subscription events from Dodo Payments. Signature-verified (Standard Webhooks), not JWT-authenticated."},
