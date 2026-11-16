@@ -147,6 +147,22 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 ]
 
 
+#: Tool definitions keyed by name, so a per-agent policy can select from them.
+TOOLS_BY_NAME: dict[str, dict[str, Any]] = {t["function"]["name"]: t for t in TOOL_DEFINITIONS}
+
+
+def _tools_for(enabled: list[str] | None) -> list[dict[str, Any]]:
+    """The subset of TOOL_DEFINITIONS this agent's data-access policy allows.
+
+    Declaring fewer tools is a usability measure, not the security boundary: the platform (or a
+    model that has been talked into it) can send a tool call for anything, so the dispatcher in
+    app/services/voice_tools.py checks the same policy again before doing any work.
+    """
+    if enabled is None:
+        return TOOL_DEFINITIONS
+    return [TOOLS_BY_NAME[name] for name in enabled if name in TOOLS_BY_NAME]
+
+
 def _webhook_url(path: str) -> str:
     base = settings.api_public_base_url.rstrip("/") if settings.api_public_base_url else ""
     return f"{base}/api/v1/voice-webhooks/{path}"
@@ -173,7 +189,12 @@ async def _request(method: str, path: str, json_body: dict[str, Any] | None = No
 
 
 async def create_assistant(
-    *, name: str, system_prompt: str, disclosure_script: str, voice_id: str | None
+    *,
+    name: str,
+    system_prompt: str,
+    disclosure_script: str,
+    voice_id: str | None,
+    enabled_tools: list[str] | None = None,
 ) -> str:
     """Create the remote assistant. `disclosure_script` binds to the platform's own greeting
     field -- never the system prompt -- so it plays first on every call regardless of what the
@@ -186,7 +207,7 @@ async def create_assistant(
             "provider": "openai",
             "model": "gpt-4o",
             "messages": [{"role": "system", "content": system_prompt}],
-            "tools": TOOL_DEFINITIONS,
+            "tools": _tools_for(enabled_tools),
         },
         "serverUrl": _webhook_url("platform/events"),
         "serverUrlSecret": settings.voice_platform_webhook_secret or None,
@@ -207,6 +228,7 @@ async def update_assistant(
     system_prompt: str,
     disclosure_script: str,
     voice_id: str | None,
+    enabled_tools: list[str] | None = None,
 ) -> None:
     body: dict[str, Any] = {
         "name": name,
@@ -215,7 +237,7 @@ async def update_assistant(
             "provider": "openai",
             "model": "gpt-4o",
             "messages": [{"role": "system", "content": system_prompt}],
-            "tools": TOOL_DEFINITIONS,
+            "tools": _tools_for(enabled_tools),
         },
     }
     if voice_id:

@@ -14,7 +14,7 @@ import {
   toolbarButton,
 } from "@dracara/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Phone, PhoneOutgoing, Plus, ShieldAlert, Trash2 } from "lucide-react";
+import { Phone, ShieldAlert, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { apiFetch, apiPage } from "@/lib/api";
@@ -26,9 +26,8 @@ import { ListToolbar } from "@/components/shared/list-toolbar";
 import { PageSection } from "@/components/shared/page-section";
 import { TablePagination } from "@/components/shared/table-pagination";
 import { SelectField } from "@/components/shared/entity-drawer";
+import { AgentRoster } from "@/components/voice-agents/agent-roster";
 import { CallDetailDrawer } from "@/components/voice-agents/call-detail-drawer";
-import { PlaceCallDrawer } from "@/components/voice-agents/place-call-drawer";
-import { VoiceAgentDrawer } from "@/components/voice-agents/voice-agent-drawer";
 import type { CallSummary, PhoneNumber, VoiceAgent } from "@dracara/types";
 
 function ComplianceGate({ children }: { children: React.ReactNode }) {
@@ -356,7 +355,7 @@ function CallLog({ agents }: { agents: VoiceAgent[] }) {
 }
 
 export default function VoiceAgentsPage() {
-  const { data: agents, isLoading, error } = useQuery({
+  const { data: agents } = useQuery({
     queryKey: ["voice-agents"],
     queryFn: () => apiFetch<VoiceAgent[]>("/voice-agents"),
     retry: false,
@@ -365,99 +364,19 @@ export default function VoiceAgentsPage() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">
-        AI voice agents that place and receive phone calls. Not to be confused with{" "}
-        <span className="font-medium text-foreground">User management</span>, which is your team.
+        AI agents that place and answer phone calls for you. Each one has its own script, its own
+        number, and only the data you share with it. Not to be confused with{" "}
+        <span className="font-medium text-foreground">User management</span>, which is your people.
       </p>
 
       <ComplianceGate>
         <div className="space-y-6">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <AgentRoster />
+
+          <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
             <PhoneNumbersCard />
-
-            <Card>
-              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
-                <div>
-                  <CardTitle className="text-base">Voice agents</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    What each agent says, which number it uses, and what it can read.
-                  </p>
-                </div>
-                <VoiceAgentDrawer
-                  trigger={
-                    <Button variant="outline" className={cn(toolbarButton, "font-semibold")}>
-                      <Plus className="h-3.5 w-3.5" />
-                      New agent
-                    </Button>
-                  }
-                />
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-12 w-full" />
-                    <Skeleton className="h-12 w-full" />
-                  </div>
-                ) : error ? (
-                  <p className="text-sm text-destructive">{(error as Error).message}</p>
-                ) : (agents ?? []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No voice agents yet. Register a number, then create your first agent.
-                  </p>
-                ) : (
-                  <ul className="space-y-2">
-                    {agents!.map((a) => (
-                      <li
-                        key={a.id}
-                        className="flex items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2"
-                      >
-                        <div className="min-w-0">
-                          <p className="flex items-center gap-1.5 text-sm font-medium">
-                            <span className="truncate">{a.name}</span>
-                            {a.is_active ? null : (
-                              <Badge variant="secondary" className="text-[10px]">
-                                Paused
-                              </Badge>
-                            )}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            <span className="capitalize">{a.direction}</span>
-                            {a.platform_assistant_id
-                              ? ""
-                              : " · not yet connected to the voice platform"}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <PlaceCallDrawer
-                            agent={a}
-                            trigger={
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                aria-label={`Place a call with ${a.name}`}
-                              >
-                                <PhoneOutgoing className="h-3.5 w-3.5" />
-                              </Button>
-                            }
-                          />
-                          <VoiceAgentDrawer
-                            agent={a}
-                            trigger={
-                              <Button variant="ghost" size="sm" className="h-8 text-xs">
-                                Edit
-                              </Button>
-                            }
-                          />
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
+            <CallLog agents={agents ?? []} />
           </div>
-
-          <CallLog agents={agents ?? []} />
         </div>
       </ComplianceGate>
     </div>

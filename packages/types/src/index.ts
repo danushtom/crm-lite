@@ -15,9 +15,91 @@ export type VoiceAgentDirection = "inbound" | "outbound" | "both";
 export type CallDirection = "inbound" | "outbound";
 export type CallStatus = "queued" | "ringing" | "in_progress" | "completed" | "failed" | "no_consent_blocked";
 
+/** Mirrors dracara_ai.voice_script.GOALS. */
+export type ScriptGoal =
+  | "qualify"
+  | "book_meeting"
+  | "follow_up"
+  | "reactivate"
+  | "collect_info"
+  | "support"
+  | "custom";
+
+/** Mirrors dracara_ai.voice_script.TONES. */
+export type ScriptTone = "warm" | "direct" | "formal" | "upbeat";
+
+/** Mirrors dracara_ai.voice_script.TOOL_BRIEFS. */
+export type VoiceTool =
+  | "get_lead_context"
+  | "search_knowledge_base"
+  | "check_consent"
+  | "book_appointment"
+  | "update_deal_stage"
+  | "log_call_outcome";
+
+/** Mirrors dracara_ai.voice_script.LEAD_FIELDS. */
+export type LeadField =
+  | "company_name"
+  | "project_type"
+  | "stage"
+  | "tags"
+  | "next_followup_date"
+  | "last_contact_date"
+  | "quoted_value"
+  | "budget_range"
+  | "timeline"
+  | "pain_points"
+  | "decision_makers"
+  | "tech_stack"
+  | "notes";
+
+export interface ScriptQuestion {
+  ask: string;
+  why: string;
+  required: boolean;
+}
+
+export interface ScriptObjection {
+  objection: string;
+  response: string;
+}
+
+/**
+ * What an agent is for and how it should run the call. The source of truth for its behaviour:
+ * `system_prompt` is compiled from this server-side and is read-only.
+ */
+export interface VoiceScript {
+  goal: ScriptGoal;
+  tone: ScriptTone;
+  opening: string;
+  talking_points: string[];
+  questions: ScriptQuestion[];
+  objections: ScriptObjection[];
+  must: string[];
+  never: string[];
+  closing: string;
+  handoff: string;
+  extra: string;
+  max_minutes: number | null;
+}
+
+/** What the agent may use mid-call. Enforced server-side, not just in the UI. */
+export interface VoiceAgentDataAccess {
+  tools: Partial<Record<VoiceTool, boolean>>;
+  lead_fields: LeadField[];
+}
+
 export interface VoiceAgent {
   id: string;
+  /** Internal label in the CRM, e.g. "Inbound receptionist". */
   name: string;
+  /** The name the agent gives on the call. */
+  persona_name: string;
+  role_title: string;
+  avatar_key: string;
+  script: VoiceScript;
+  data_access: VoiceAgentDataAccess;
+  /** Compiled from `script`. Read-only. */
   system_prompt: string;
   direction: VoiceAgentDirection;
   voice_id: string | null;
@@ -27,6 +109,29 @@ export interface VoiceAgent {
   disclosure_script: string;
   is_active: boolean;
   version: number;
+}
+
+export interface VoiceAgentTemplate {
+  key: string;
+  name: string;
+  summary: string;
+  persona_name: string;
+  role_title: string;
+  avatar_key: string;
+  script: VoiceScript;
+  data_access: VoiceAgentDataAccess;
+}
+
+export interface ScriptPreviewStep {
+  label: string;
+  detail: string;
+  kind: "says" | "asks" | "does" | "guardrail";
+}
+
+export interface ScriptPreview {
+  preview: ScriptPreviewStep[];
+  disclosure_script: string;
+  system_prompt: string;
 }
 
 export interface PhoneNumber {

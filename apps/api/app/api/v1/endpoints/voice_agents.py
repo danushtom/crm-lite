@@ -20,6 +20,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated
 
+from dracara_ai import voice_script
+from dracara_ai.voice_templates import TEMPLATES, TEMPLATES_BY_KEY
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 
 from app.api.deps import AdminDbDep, AdminDep, CurrentUserDep, DbDep, ProfileDep, require_permission
@@ -36,9 +38,12 @@ from app.schemas.voice_agents import (
     OutboundCallRequest,
     PhoneNumber,
     PhoneNumberCreate,
+    ScriptPreview,
+    ScriptPreviewRequest,
     VoiceAgent,
     VoiceAgentCreate,
     VoiceAgentDocument,
+    VoiceAgentTemplate,
     VoiceAgentUpdate,
 )
 from app.services import voice_agents as voice_agent_service
@@ -71,6 +76,11 @@ async def _assign_phone_number(db: DbDep, voice_agent_id: str, new_phone_number_
         await db.update(
             "phone_numbers", {"id": f"eq.{new_phone_number_id}"}, {"assigned_voice_agent_id": voice_agent_id}
         )
+
+
+async def _organization_name(db: DbDep, organization_id: str) -> str:
+    result = await db.select("organizations", params={"select": "name", "id": f"eq.{organization_id}"})
+    return result.one("Organization").get("name") or "our team"
 
 
 async def _require_compliance_ack(db: DbDep, organization_id: str) -> None:
@@ -146,20 +156,60 @@ async def create_voice_agent(
     body: VoiceAgentCreate, db: DbDep, profile: ProfileDep, _admin: AdminDep, response: Response
 ) -> VoiceAgent:
     await _require_compliance_ack(db, profile["organization_id"])
+    org_name = await _organization_name(db, profile["organization_id"])
 
-    org_result = await db.select(
-        "organizations", params={"select": "name", "id": f"eq.{profile['organization_id']}"}
+    # A template is a starting point, not a constraint: anything the request also sends wins,
+    # so "start from Discovery call but with our own opening" is one request, not two.
+    template = TEMPLATES_BY_KEY.get(body.template or "", {})
+    persona_name = body.persona_name or template.get("persona_name", "")
+    role_title = body.role_title or template.get("role_title", "")
+    avatar_key = body.avatar_key or template.get("avatar_key", "")
+
+    if body.script is not None:
+        script = body.script.model_dump(mode="json")
+    elif template:
+        script = dict(template["script"])
+    else:
+        script = {}
+    # Read without attribute access: the field is marked deprecated, and touching it directly
+    # raises a DeprecationWarning on a perfectly valid request.
+    raw_prompt = body.model_dump(include={"system_prompt"}).get("system_prompt")
+    if raw_prompt and not script.get("extra"):
+        # Deprecated raw-prompt path: it becomes the script's free-text notes, which the
+        # compiler emits verbatim, so an existing integration's agent behaves as it did.
+        script = {**script, "goal": script.get("goal") or "custom", "extra": raw_prompt}
+
+    if body.data_access is not None:
+        data_access = body.data_access.model_dump(mode="json")
+    elif template:
+        data_access = dict(template["data_access"])
+    else:
+        data_access = voice_agent_service.default_data_access()
+
+    disclosure_script = voice_agent_service.disclosure_for(
+        voice_agent_service.resolve_persona(
+            name=body.name, persona_name=persona_name, role_title=role_title
+        )[0],
+        org_name,
     )
-    org_name = org_result.one("Organization").get("name") or "our team"
-    disclosure_script = (
-        f"You're speaking with {body.name}, an AI assistant from {org_name}. "
-        "This call may be recorded."
+    system_prompt = voice_agent_service.compile_system_prompt(
+        script=script,
+        data_access=data_access,
+        name=body.name,
+        persona_name=persona_name,
+        role_title=role_title,
+        organization_name=org_name,
     )
     inserted = await db.insert(
         "voice_agents",
         {
             "name": body.name,
-            "system_prompt": body.system_prompt,
+            "persona_name": persona_name,
+            "role_title": role_title,
+            "avatar_key": avatar_key,
+            "script": script,
+            "data_access": data_access,
+            "system_prompt": system_prompt,
             "direction": body.direction.value,
             "voice_id": body.voice_id,
             "phone_number_id": body.phone_number_id,
@@ -175,9 +225,10 @@ async def create_voice_agent(
     try:
         platform_assistant_id = await voice_platform.create_assistant(
             name=body.name,
-            system_prompt=body.system_prompt,
+            system_prompt=system_prompt,
             disclosure_script=disclosure_script,
             voice_id=body.voice_id,
+            enabled_tools=voice_script.enabled_tools(data_access),
         )
         updated = await db.update(
             "voice_agents", {"id": f"eq.{row['id']}"}, {"platform_assistant_id": platform_assistant_id}
@@ -195,6 +246,47 @@ async def create_voice_agent(
 # --- Phone numbers and calls: literal paths registered before the single-segment
 # /{voice_agent_id} wildcard below, or FastAPI's first-match routing would swallow
 # "/voice-agents/phone-numbers" and "/voice-agents/calls" as if they were an id. -------------
+
+
+@router.get(
+    "/templates",
+    response_model=list[VoiceAgentTemplate],
+    summary="Starter scripts a new agent can be created from",
+    description="Pass a template's `key` to POST /voice-agents to start from it.",
+    responses=ERROR_RESPONSES,
+)
+async def list_templates(
+    _perm: Annotated[dict, Depends(require_permission("voice_agents.read"))],
+) -> list[VoiceAgentTemplate]:
+    return [VoiceAgentTemplate.model_validate(t) for t in TEMPLATES]
+
+
+@router.post(
+    "/script-preview",
+    response_model=ScriptPreview,
+    summary="Preview what a script makes an agent do, without saving it",
+    description=(
+        "Compiles a draft script exactly as saving it would. The walkthrough, the disclosure "
+        "line and the prompt all come from the same compiler the agent is briefed with, so the "
+        "builder cannot show something different from what the agent is told."
+    ),
+    responses=ERROR_RESPONSES,
+)
+async def script_preview(
+    body: ScriptPreviewRequest,
+    db: DbDep,
+    profile: ProfileDep,
+    _perm: Annotated[dict, Depends(require_permission("voice_agents.read"))],
+) -> ScriptPreview:
+    steps, prompt, disclosure = voice_agent_service.build_preview(
+        script=body.script.model_dump(mode="json"),
+        data_access=body.data_access.model_dump(mode="json"),
+        name=body.name or "Your agent",
+        persona_name=body.persona_name,
+        role_title=body.role_title,
+        organization_name=await _organization_name(db, profile["organization_id"]),
+    )
+    return ScriptPreview(preview=steps, disclosure_script=disclosure, system_prompt=prompt)
 
 
 @router.get("/phone-numbers", response_model=list[PhoneNumber], responses=ERROR_RESPONSES)
@@ -310,11 +402,56 @@ async def get_voice_agent(
     responses=ERROR_RESPONSES,
 )
 async def update_voice_agent(
-    voice_agent_id: str, body: VoiceAgentUpdate, db: DbDep, response: Response, if_match: IfMatchDep, _admin: AdminDep
+    voice_agent_id: str,
+    body: VoiceAgentUpdate,
+    db: DbDep,
+    profile: ProfileDep,
+    response: Response,
+    if_match: IfMatchDep,
+    _admin: AdminDep,
 ) -> VoiceAgent:
     changes = VoiceAgentUpdate.model_validate(body.changes()).model_dump(exclude_unset=True, mode="json")
     if not changes:
         return await get_voice_agent(voice_agent_id, db, response, {})
+
+    # Anything that feeds the prompt means recompiling it, and the prompt is never taken from
+    # the request: `system_prompt` here is the deprecated raw-text alias for the script's notes.
+    raw_prompt = changes.pop("system_prompt", None)
+    if raw_prompt:
+        script = changes.get("script")
+        if script is None:
+            current = await db.select(
+                "voice_agents", params={"select": "script", "id": f"eq.{voice_agent_id}"}
+            )
+            script = dict(current.one("Voice agent").get("script") or {})
+        changes["script"] = {**script, "goal": script.get("goal") or "custom", "extra": raw_prompt}
+
+    if any(k in changes for k in ("script", "data_access", "name", "persona_name", "role_title")):
+        before = await db.select(
+            "voice_agents",
+            params={"select": "name,persona_name,role_title,script,data_access", "id": f"eq.{voice_agent_id}"},
+        )
+        merged = {**before.one("Voice agent"), **changes}
+        org_name = await _organization_name(db, profile["organization_id"])
+        changes["system_prompt"] = voice_agent_service.compile_system_prompt(
+            script=merged.get("script"),
+            data_access=merged.get("data_access"),
+            name=merged.get("name") or "",
+            persona_name=merged.get("persona_name"),
+            role_title=merged.get("role_title"),
+            organization_name=org_name,
+        )
+        if "persona_name" in changes or "name" in changes:
+            # The caller hears this name on every call, so renaming the persona has to move the
+            # disclosure with it rather than leaving it introducing someone who no longer exists.
+            changes["disclosure_script"] = voice_agent_service.disclosure_for(
+                voice_agent_service.resolve_persona(
+                    name=merged.get("name") or "",
+                    persona_name=merged.get("persona_name"),
+                    role_title=merged.get("role_title"),
+                )[0],
+                org_name,
+            )
 
     old_phone_number_id = None
     if "phone_number_id" in changes:
@@ -326,13 +463,16 @@ async def update_voice_agent(
     if "phone_number_id" in changes:
         await _assign_phone_number(db, voice_agent_id, changes["phone_number_id"], old_phone_number_id)
 
-    if any(k in changes for k in ("name", "system_prompt", "voice_id")) and row.get("platform_assistant_id"):
+    if any(k in changes for k in ("name", "system_prompt", "voice_id", "data_access")) and row.get(
+        "platform_assistant_id"
+    ):
         await voice_platform.update_assistant(
             row["platform_assistant_id"],
             name=row["name"],
             system_prompt=row["system_prompt"],
             disclosure_script=row["disclosure_script"],
             voice_id=row.get("voice_id"),
+            enabled_tools=voice_script.enabled_tools(row.get("data_access")),
         )
 
     set_etag(response, row)
@@ -563,6 +703,15 @@ async def place_outbound_call(
             "to_number": contact["phone"],
             "from_number": from_number,
             "initiated_by": profile["id"],
+            # Captured now, because the agent can be re-scripted tomorrow and "what was it told
+            # when it said that?" is the first question asked about a call that went wrong.
+            "script_snapshot": {
+                "script": agent.get("script"),
+                "data_access": agent.get("data_access"),
+                "persona_name": agent.get("persona_name"),
+                "role_title": agent.get("role_title"),
+                "context_note": body.context_note,
+            },
         },
     )
     call = created.one("Call")

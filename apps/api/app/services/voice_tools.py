@@ -6,6 +6,14 @@ trusted, signature-verified, DB-backed lookup -- never from an argument the LLM/
 payload supplies directly (that argument is hallucination/prompt-injection-controllable in a
 way the webhook's own resolved call_id is not). Keep each tool to 1-2 DB round trips: this
 runs on the critical path of a live phone call.
+
+`dispatch()` additionally enforces the agent's own data-access policy -- which tools it may
+call, and which lead fields it may be told. That check belongs *here* rather than only in the
+tool definitions sent to the platform: the declarations are advisory (a tool call can arrive
+for a tool that was never declared, whether through a vendor-side edit, a stale assistant
+configuration or a model that has been talked into inventing one), while this function is the
+only path from a tool call to the database. The policy is read from the `voice_agents` row that
+the resolved `calls` row points at -- not from the payload, for the same reason `org_id` is not.
 """
 
 from __future__ import annotations
@@ -13,6 +21,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Awaitable, Callable
 
+from dracara_ai import voice_script
 from dracara_ai.errors import AiError
 
 from app.core.errors import NotFoundError
@@ -37,7 +46,39 @@ async def check_consent(org_id: str, arguments: dict[str, Any], admin_db: Supaba
     return {"consented": bool(row and row.get("ai_call_consent"))}
 
 
-async def get_lead_context(org_id: str, arguments: dict[str, Any], admin_db: SupabaseAdminClient) -> dict[str, Any]:
+#: Where each shareable field actually lives. A field the organization did not tick is never
+#: read into the response, so an agent cannot be told a budget or an internal note by accident.
+#: Keys are `dracara_ai.voice_script.LEAD_FIELDS`; the UI offers exactly this vocabulary.
+_LEAD_FIELD_SOURCES: dict[str, tuple[str, str]] = {
+    "company_name": ("company", "name"),
+    "project_type": ("lead", "project_type"),
+    "stage": ("opportunity", "stage"),
+    "quoted_value": ("opportunity", "quoted_value"),
+    "tags": ("lead", "tags"),
+    "next_followup_date": ("lead", "next_followup_date"),
+    "last_contact_date": ("lead", "last_contact_date"),
+    "budget_range": ("intelligence", "budget_range"),
+    "timeline": ("intelligence", "timeline"),
+    "pain_points": ("intelligence", "pain_points"),
+    "decision_makers": ("intelligence", "decision_makers"),
+    "tech_stack": ("opportunity", "tech_stack"),
+    "notes": ("intelligence", "notes"),
+}
+
+
+async def get_lead_context(
+    org_id: str,
+    arguments: dict[str, Any],
+    admin_db: SupabaseAdminClient,
+    *,
+    allowed_fields: list[str] | None = None,
+) -> dict[str, Any]:
+    """What the CRM knows about this lead -- limited to the fields the organization shared.
+
+    `allowed_fields` comes from the agent's policy, resolved in `dispatch`. None means "whatever
+    the policy default is", never "everything": an agent with no policy row still gets the
+    conservative default set rather than the whole intelligence panel.
+    """
     lead_id = arguments.get("lead_id")
     if not lead_id:
         return {"error": "lead_id is required"}
@@ -47,11 +88,51 @@ async def get_lead_context(org_id: str, arguments: dict[str, Any], admin_db: Sup
         return {"error": "lead not found"}
     if lead.get("organization_id") != org_id:
         return {"error": "lead not found"}
-    intelligence = await lead_service.get_lead_intelligence(admin_db, lead_id)
-    return {
-        "lead": {k: lead.get(k) for k in ("id", "company_id", "next_followup_date", "tags")},
-        "intelligence": intelligence,
-    }
+
+    fields = allowed_fields if allowed_fields is not None else list(voice_script.DEFAULT_LEAD_FIELDS)
+    wanted = {f for f in fields if f in _LEAD_FIELD_SOURCES}
+    if not wanted:
+        return {"shared": {}, "note": "This agent has not been given access to CRM lead data."}
+    sources = {_LEAD_FIELD_SOURCES[f][0] for f in wanted}
+
+    # Only the rows a chosen field actually needs: three lookups is already a lot to do while
+    # someone waits on the phone.
+    company: dict[str, Any] = {}
+    if "company" in sources and lead.get("company_id"):
+        found = await admin_db.select(
+            "companies",
+            params={"select": "name", "id": f"eq.{lead['company_id']}", "organization_id": f"eq.{org_id}"},
+        )
+        company = found.first() or {}
+
+    opportunity: dict[str, Any] = {}
+    if "opportunity" in sources:
+        found = await admin_db.select(
+            "opportunities",
+            params={
+                "select": "stage,quoted_value,tech_stack",
+                "lead_id": f"eq.{lead_id}",
+                "status": "eq.active",
+                "deleted_at": "is.null",
+                "limit": "1",
+            },
+        )
+        opportunity = found.first() or {}
+
+    intelligence: dict[str, Any] = {}
+    if "intelligence" in sources:
+        intelligence = await lead_service.get_lead_intelligence(admin_db, lead_id) or {}
+
+    rows = {"lead": lead, "company": company, "opportunity": opportunity, "intelligence": intelligence}
+    shared: dict[str, Any] = {}
+    for field in voice_script.LEAD_FIELDS:
+        if field not in wanted:
+            continue
+        source, key = _LEAD_FIELD_SOURCES[field]
+        value = rows[source].get(key)
+        if value not in (None, "", [], {}):
+            shared[field] = value
+    return {"shared": shared}
 
 
 async def log_call_outcome(org_id: str, arguments: dict[str, Any], admin_db: SupabaseAdminClient) -> dict[str, Any]:
@@ -191,10 +272,60 @@ TOOLS: dict[str, ToolFn] = {
 }
 
 
-async def dispatch(tool_name: str, org_id: str, arguments: dict[str, Any], admin_db: SupabaseAdminClient) -> dict[str, Any]:
+async def _policy(
+    org_id: str, voice_agent_id: str | None, admin_db: SupabaseAdminClient
+) -> dict[str, Any] | None:
+    """The agent's data-access policy, read from its own row and scoped by the resolved org."""
+    if not voice_agent_id:
+        return None
+    result = await admin_db.select(
+        "voice_agents",
+        params={"select": "data_access", "id": f"eq.{voice_agent_id}", "organization_id": f"eq.{org_id}"},
+    )
+    row = result.first()
+    return (row or {}).get("data_access") or {}
+
+
+async def dispatch(
+    tool_name: str,
+    org_id: str,
+    arguments: dict[str, Any],
+    admin_db: SupabaseAdminClient,
+    *,
+    voice_agent_id: str | None = None,
+) -> dict[str, Any]:
+    """Run one mid-call tool, if this agent is allowed to.
+
+    `voice_agent_id` comes from the resolved `calls` row in the webhook, never from the payload.
+    Omitting it (an older caller, or a call row without an agent) falls back to the conservative
+    default policy rather than to "everything allowed" -- a missing policy must not be a
+    privilege escalation.
+    """
     tool = TOOLS.get(tool_name)
     if tool is None:
         logger.warning("voice_tool_unknown tool=%s", tool_name)
         return {"error": f"Unknown tool: {tool_name}"}
+
+    data_access = await _policy(org_id, voice_agent_id, admin_db)
+    allowed = voice_script.enabled_tools(data_access)
+    if tool_name not in allowed:
+        # Refused, and said plainly, so the model tells the caller it cannot do that rather
+        # than hallucinating that it did. A write tool (booking, stage change) that reached
+        # here while switched off is the case this exists for.
+        logger.warning(
+            "voice_tool_refused tool=%s org_id=%s agent=%s", tool_name, org_id, voice_agent_id
+        )
+        return {
+            "error": f"{tool_name} is not enabled for this agent",
+            "note": "Tell the caller you cannot do that on this call and offer a callback.",
+        }
+
     logger.info("voice_tool_call tool=%s org_id=%s", tool_name, org_id)
+    if tool_name == "get_lead_context":
+        return await get_lead_context(
+            org_id,
+            arguments,
+            admin_db,
+            allowed_fields=voice_script.shared_lead_fields(data_access),
+        )
     return await tool(org_id, arguments, admin_db)

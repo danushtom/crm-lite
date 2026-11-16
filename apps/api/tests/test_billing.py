@@ -65,7 +65,10 @@ def paid_row(plan: str, *, seats: int = 5, status: str = "active", **extra):
         "plan": plan,
         "status": status,
         "seats": seats,
-        "trial_ends_at": _iso(datetime.now(timezone.utc) - timedelta(days=30)),
+        # A fixed date in the past, not one derived from the clock: these rows are asserted
+        # against the fixed NOW above, so a relative date made the trial look live again once
+        # the real date moved past NOW -- which is how this file started failing on its own.
+        "trial_ends_at": "2026-01-01T00:00:00+00:00",
         "dodo_customer_id": "cus_1",
         "dodo_subscription_id": "sub_1",
         **extra,

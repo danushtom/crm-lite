@@ -7,7 +7,9 @@ here is the voice platform, not a logged-in user. Every route is signature-verif
 exempted, so the platform's retries never compete with the per-token/IP default quota.
 
 CRITICAL SECURITY PATTERN: a payload's own `organization_id`/metadata claims are never trusted
-directly. `organization_id` is always resolved server-side from `calls.id` (the call_id we
+directly. The same applies to `voice_agent_id`, which is handed to the tool dispatcher from the
+resolved `calls` row so that the agent's data-access policy is read from the agent we actually
+dialled with, not from one the payload names. `organization_id` is always resolved server-side from `calls.id` (the call_id we
 minted and handed to the platform at dial time, in `metadata`), via a service-role lookup.
 Every subsequent query in this module is scoped by that resolved value, never by anything the
 payload itself claims. This mirrors the only existing precedent for "org id derived from a
@@ -146,7 +148,11 @@ async def platform_events(
     call_id = call["id"]
 
     if message_type == "tool-calls":
-        return await _handle_tool_calls(admin_db, org_id, call_id, message)
+        # voice_agent_id from the resolved row, so the policy enforced in voice_tools.dispatch
+        # is the one belonging to the agent this call was actually placed with.
+        return await _handle_tool_calls(
+            admin_db, org_id, call_id, message, voice_agent_id=call.get("voice_agent_id")
+        )
 
     return await _handle_status_event(admin_db, call, message)
 
@@ -200,7 +206,12 @@ async def _handle_status_event(
 
 
 async def _handle_tool_calls(
-    admin_db: AdminDbDep, org_id: str, call_id: str, message: dict[str, Any]
+    admin_db: AdminDbDep,
+    org_id: str,
+    call_id: str,
+    message: dict[str, Any],
+    *,
+    voice_agent_id: str | None = None,
 ) -> dict[str, Any]:
     results = []
     for tool_call in message.get("toolCalls", []):
@@ -209,7 +220,9 @@ async def _handle_tool_calls(
         arguments = function.get("arguments") or {}
         arguments.setdefault("call_id", call_id)
         try:
-            result = await dispatch_tool(tool_name, org_id, arguments, admin_db)
+            result = await dispatch_tool(
+                tool_name, org_id, arguments, admin_db, voice_agent_id=voice_agent_id
+            )
         except Exception:
             logger.exception("voice_tool_call_failed tool=%s call_id=%s", tool_name, call_id)
             result = {"error": "internal error handling this tool call"}

@@ -15,6 +15,7 @@ For the full business and technical design record, including everything shipped 
 | Multi-tenant organizations (self-serve signup, invite-token onboarding) | Shipped |
 | Dynamic, admin-configurable roles and permissions (RBAC) | Shipped |
 | AI voice sales agents (Twilio + a managed voice-AI platform) | Shipped |
+| Voice-agent script builder — structured scripts compiled into the prompt, with per-agent data-access controls | Shipped |
 | CRM assistant — answers questions about your pipeline, through your own permissions | Shipped |
 | AI call notes — summary, action items and a follow-up date from every call transcript | Shipped |
 | AI proposal drafting — a first draft from lead intelligence and requirements | Shipped |
