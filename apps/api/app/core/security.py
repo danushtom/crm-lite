@@ -36,6 +36,8 @@ class TokenUser:
     sub: str
     email: str | None = None
     role: str | None = None
+    #: Authenticator assurance level: "aal1" (password) or "aal2" (password + second factor).
+    aal: str | None = None
 
     @property
     def id(self) -> str:
@@ -72,10 +74,12 @@ def _claims_to_user(payload: dict[str, Any]) -> TokenUser:
         raise UnauthorizedError("Token is missing a subject claim")
     email = payload.get("email")
     role = payload.get("role")
+    aal = payload.get("aal")
     return TokenUser(
         sub=sub,
         email=email if isinstance(email, str) else None,
         role=role if isinstance(role, str) else None,
+        aal=aal if isinstance(aal, str) else None,
     )
 
 

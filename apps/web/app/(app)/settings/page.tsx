@@ -22,6 +22,7 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { selectClass } from "@/components/shared/entity-drawer";
 import { CaptureKeysCard } from "@/components/settings/capture-keys-card";
 import { BillingSummaryCard } from "@/components/billing/billing-summary-card";
+import { TwoFactorCard } from "@/components/settings/two-factor-card";
 import { useApiMutation } from "@/lib/use-api-mutation";
 import { browserTimezone, timezoneLabel, timezoneOptions } from "@/lib/timezones";
 
@@ -177,6 +178,8 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      <TwoFactorCard />
 
       <WorkspaceCard />
 

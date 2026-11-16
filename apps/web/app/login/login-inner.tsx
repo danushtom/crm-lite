@@ -3,6 +3,7 @@
 import { Button, Input } from "@dracara/ui";
 import { AuthLink, AuthShell, Field, MissingEnvNotice, authButtonClass } from "@/components/auth/auth-shell";
 import { hasSupabaseEnv, safeNext } from "@/lib/auth";
+import { needsSecondFactor } from "@/lib/mfa";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -32,6 +33,10 @@ export default function LoginInner() {
       const supabase = createClient();
       const { error: signError } = await supabase.auth.signInWithPassword({ email, password });
       if (signError) throw signError;
+      if (await needsSecondFactor(supabase)) {
+        router.push(`/login/verify?next=${encodeURIComponent(next)}`);
+        return;
+      }
       router.push(next);
       router.refresh();
     } catch (err: unknown) {

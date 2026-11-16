@@ -83,6 +83,15 @@ async def get_current_profile(db: DbDep, user: CurrentUserDep) -> dict:
     )
     profile = result.first()
     if profile is None:
+        if user.aal != "aal2":
+            # The likeliest reason a signed-in user cannot read their own row: they have a
+            # verified second factor and this session has not used it, so current_org_id()
+            # and the mfa_required policies (20260920010000) hide everything. Say so, so the
+            # client can send them to the code prompt instead of showing a dead end.
+            raise ForbiddenError(
+                "Enter the code from your authenticator app to continue",
+                code="mfa_required",
+            )
         raise ForbiddenError("No profile exists for this account")
     # Deactivated users are refused here as well as in RLS. The database is the authority --
     # current_org_id() and is_admin() both require is_active -- but a token that outlives a

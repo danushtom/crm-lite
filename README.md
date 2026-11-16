@@ -23,6 +23,7 @@ For the full business and technical design record, including everything shipped 
 | Configurable pipeline stages | Not built — stages are a fixed 12-value enum |
 | Billing — per-seat plans on Dodo Payments, 14-day no-card trial, read-only after it lapses | Shipped |
 | Self-serve signup, password reset, and invite acceptance (set-password) flows | Shipped |
+| Two-factor authentication (authenticator app), enforced by the database | Shipped |
 | CSV import of companies, contacts and leads — column auto-mapping, de-duplication, per-row results | Shipped |
 | Recently deleted — list and restore soft-deleted leads, opportunities, contacts and companies | Shipped |
 | Bulk actions — select many leads (reassign, tag, delete), contacts or companies (delete) | Shipped |

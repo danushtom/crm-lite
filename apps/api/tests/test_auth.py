@@ -111,3 +111,12 @@ def test_es256_rejected_when_signed_by_other_key(monkeypatch):
     with pytest.raises(APIError) as ei:
         security.decode_access_token(token)
     assert ei.value.status_code == 401
+
+
+
+def test_the_aal_claim_is_carried_on_the_token_user(monkeypatch):
+    """The API needs the assurance level to explain an MFA block (see test_mfa.py)."""
+    monkeypatch.setattr(settings, "supabase_jwt_secret", "test-secret-at-least-32-bytes-long!!", raising=False)
+    token = jwt.encode(_claims(aal="aal2"), "test-secret-at-least-32-bytes-long!!", algorithm="HS256")
+
+    assert security.decode_access_token(token).aal == "aal2"

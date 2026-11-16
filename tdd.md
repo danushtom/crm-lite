@@ -1876,6 +1876,10 @@ Soft deletes (23.1) were recoverable in principle only: every SELECT policy hide
 The lead, contact and company lists now support multi-select. Leads can be reassigned (full-access roles only, and only to an active member of the organization), tagged, untagged or deleted in bulk; contacts and companies can be deleted in bulk. POST /bulk/{kind} runs as the caller under RLS and does per record what the single-record path does, so a bulk action cannot do anything its user could not do one record at a time. Each id gets its own result. The UI keeps only the failed rows selected, so they can be retried. Ids must be UUIDs, because they are interpolated into an in.(...) filter. Bulk writes skip If-Match by design. Reassigning a lead, singly or in bulk, changes the lead's owner_id only; its opportunities keep their own owner_id, which agent performance reads for wins.
 
 
+23.11b Two-factor authentication
+A user can turn on an authenticator app from Settings; once they have, a session that has not presented a code is refused by the database rather than by the browser. Checking it in the web app alone would protect nothing: the attacker 2FA exists to stop already has the password and can sign in to Supabase Auth directly for an aal1 token and call PostgREST or this API without ever loading the app. Enforcement is therefore in two layers, following Supabase's documented pattern: current_org_id() returns NULL for an under-verified session, which closes every organization-scoped policy and every SECURITY DEFINER function that compares against it (the same mechanism that closed them for revoked users in 20260909020000), plus a RESTRICTIVE policy on every RLS table for the few policies that do not go through that chokepoint (notifications_*_own, users_update_self). A user with no verified factor is unaffected, and service-role callers have no auth.uid() so the worker and webhooks are untouched. The API reports a blocked session as 403 mfa_required rather than as an empty workspace, and middleware sends them to /login/verify.
+
+
 23.5 What in this document is now stale
 Section
 Why it's stale

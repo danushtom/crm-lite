@@ -39,3 +39,13 @@ describe("validateNewPassword", () => {
     expect(validateNewPassword(long, long + "y")).toMatch(/do not match/);
   });
 });
+
+describe("normalizeTotp", () => {
+  it("accepts six digits, with the spaces apps display", async () => {
+    const { normalizeTotp } = await import("@/lib/mfa");
+    expect(normalizeTotp("123456")).toBe("123456");
+    expect(normalizeTotp(" 123 456 ")).toBe("123456");
+    expect(normalizeTotp("12345")).toBeNull();
+    expect(normalizeTotp("12a456")).toBeNull();
+  });
+});

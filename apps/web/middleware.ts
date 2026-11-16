@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { safeNext } from "@/lib/auth";
+import { needsSecondFactor } from "@/lib/mfa";
 
 /** Reachable without a session. /auth/confirm must be: it is what creates the session. */
 const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/auth/confirm"];
@@ -47,7 +48,8 @@ export async function middleware(request: NextRequest) {
   // list of protected ones) means a new page is protected by default -- the old protected list
   // had already missed /voice-agents.
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + "/"));
-  const isSignedOutOnly = SIGNED_OUT_ONLY.some((p) => path === p || path.startsWith(p + "/"));
+  // Exact matches: /login/verify is under /login but is where a signed-in user finishes 2FA.
+  const isSignedOutOnly = SIGNED_OUT_ONLY.includes(path);
 
   if (!user && !isPublic) {
     const redirectUrl = request.nextUrl.clone();
@@ -55,6 +57,19 @@ export async function middleware(request: NextRequest) {
     redirectUrl.search = "";
     redirectUrl.searchParams.set("next", path + request.nextUrl.search);
     return NextResponse.redirect(redirectUrl);
+  }
+
+  // A user with a second factor who has not used it this session goes to the code prompt.
+  // The database refuses such a session anyway (20260920010000_enforce_mfa.sql); this turns
+  // what would be empty screens into the step they need to take.
+  if (user && !path.startsWith("/login/verify") && !path.startsWith("/auth/")) {
+    if (await needsSecondFactor(supabase)) {
+      const verifyUrl = request.nextUrl.clone();
+      verifyUrl.pathname = "/login/verify";
+      verifyUrl.search = "";
+      verifyUrl.searchParams.set("next", isSignedOutOnly ? "/dashboard" : path + request.nextUrl.search);
+      return NextResponse.redirect(verifyUrl);
+    }
   }
 
   if (user && isSignedOutOnly) {
