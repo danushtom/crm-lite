@@ -590,3 +590,25 @@ def test_an_outbound_call_records_the_script_it_was_placed_with(
     snapshot = payload["script_snapshot"]
     assert snapshot["script"]["closing"] == "Book it."
     assert snapshot["persona_name"] == "Maya"
+
+
+def test_an_agent_created_before_the_persona_columns_existed_still_lists(authed_client, fake_db, test_user):
+    """The migration adds persona_name/role_title/avatar_key as nullable, so every pre-existing
+    row holds NULL. A pydantic field default only applies when the key is *absent*, so an
+    explicit null failed validation and took the whole list down with a 500 -- which is exactly
+    what happened the first time this ran against a real database. The fixtures elsewhere in
+    this file omit those keys, which is why they did not catch it."""
+    as_agent(fake_db, test_user)
+    fake_db.responses["GET voice_agents"] = FakeResult(
+        [{**VOICE_AGENT_ROW, "persona_name": None, "role_title": None, "avatar_key": None,
+          "script": {"goal": "custom", "extra": "legacy prompt"}, "data_access": {}}]
+    )
+
+    response = authed_client.get(f"{V1}/voice-agents")
+
+    assert response.status_code == 200, response.text
+    agent = response.json()[0]
+    assert agent["persona_name"] == ""
+    assert agent["role_title"] == ""
+    assert agent["avatar_key"] == ""
+    assert agent["script"]["extra"] == "legacy prompt"

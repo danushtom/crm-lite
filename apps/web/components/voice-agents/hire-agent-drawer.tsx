@@ -165,13 +165,13 @@ export function HireAgentDrawer({ trigger }: { trigger: React.ReactNode }) {
         hint="How it introduces itself."
       />
 
-      <Field label="Picture" hint="Just so your team can tell them apart at a glance.">
+      <Field label="Colour" hint="Just so your team can tell them apart at a glance.">
         <div className="flex flex-wrap gap-2">
           {AVATAR_KEYS.map((key) => (
             <button
               key={key}
               type="button"
-              aria-label={`Use the ${key} picture`}
+              aria-label={`Use the ${key} colour`}
               aria-pressed={avatarKey === key}
               onClick={() => setAvatarKey(key)}
               className={cn(

@@ -108,6 +108,15 @@ class VoiceAgent(APIModel):
     persona_name: str = Field(default="", description="The name the agent gives on the call.")
     role_title: str = Field(default="", description="The job title it introduces itself with.")
     avatar_key: str = Field(default="", description="Which illustrated avatar to show.")
+
+    @field_validator("persona_name", "role_title", "avatar_key", mode="before")
+    @classmethod
+    def _null_is_unset(cls, value: Any) -> Any:
+        """These columns are nullable, and every agent created before they existed holds NULL.
+        A field default only applies when the key is *absent*, so without this an explicit null
+        from PostgREST fails validation and the whole list 500s -- which is exactly what it did
+        the first time this shipped against a real database."""
+        return "" if value is None else value
     script: VoiceScript = Field(default_factory=VoiceScript)
     data_access: VoiceAgentDataAccess = Field(default_factory=VoiceAgentDataAccess)
     system_prompt: str = Field(

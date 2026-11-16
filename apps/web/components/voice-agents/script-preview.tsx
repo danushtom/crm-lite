@@ -130,13 +130,17 @@ export function ScriptPreviewPanel({
             ) : null}
           </div>
 
-          <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+          {/* A div, not a p: Badge renders a div, and a div inside a p is invalid HTML that
+              React reports as a hydration error. */}
+          <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
             <Badge variant="outline" className="shrink-0 text-[10px]">
               Fixed
             </Badge>
-            Every call opens with the recording disclosure above. It is not editable, and it plays
-            before anything in your script.
-          </p>
+            <span>
+              Every call opens with the recording disclosure above. It is not editable, and it
+              plays before anything in your script.
+            </span>
+          </div>
         </>
       ) : null}
     </div>
